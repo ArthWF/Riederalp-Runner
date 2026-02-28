@@ -39,11 +39,36 @@ runnerImg.onload = () => {
 
   hero.w = Math.round(frameW * runnerScale);
   hero.h = Math.round(frameH * runnerScale);
-  hero.y = groundY - hero.h + RUNNER_GROUND_OFFSET; // ⬅️ sit lower
+  hero.y = groundY - hero.h + RUNNER_GROUND_OFFSET;
 };
 
 runnerImg.onerror = () => {
   runnerReady = false;
+};
+
+// --------------------
+// Edelweiss sprite sheet (3 frames)
+// --------------------
+const edelImg = new Image();
+edelImg.src = "assets/edelweiss.png";
+
+const EDEL_FRAMES = 3;          // ✅ ta sheet a 3 frames
+let edelFrameW = 0;
+let edelFrameH = 0;
+let edelReady = false;
+
+let edelFrame = 0;
+let edelTimer = 0;
+const EDEL_FPS = 5;             // mouvement doux
+const EDEL_SCALE = 0.18;        // ajuste la taille
+
+edelImg.onload = () => {
+  edelReady = true;
+  edelFrameW = Math.floor(edelImg.width / EDEL_FRAMES);
+  edelFrameH = edelImg.height;
+};
+edelImg.onerror = () => {
+  edelReady = false;
 };
 
 // --------------------
@@ -59,7 +84,7 @@ const state = {
 
 const hero = {
   x: 70,
-  y: groundY - 28 + RUNNER_GROUND_OFFSET, // ⬅️ sit lower (fallback too)
+  y: groundY - 28 + RUNNER_GROUND_OFFSET,
   w: 26,
   h: 28,
   vy: 0,
@@ -82,10 +107,13 @@ function reset() {
 
   hero.vy = 0;
   hero.jumpsLeft = 2;
-  hero.y = groundY - hero.h + RUNNER_GROUND_OFFSET; // ⬅️ sit lower
+  hero.y = groundY - hero.h + RUNNER_GROUND_OFFSET;
 
   animFrame = 0;
   animTimer = 0;
+
+  edelFrame = 0;
+  edelTimer = 0;
 }
 
 // Double jump: main jump smaller, 2nd jump boost higher
@@ -95,12 +123,7 @@ function jump() {
 
   const onGround = hero.y >= groundY - hero.h + RUNNER_GROUND_OFFSET - 0.5;
 
-  if (onGround) {
-    hero.vy = -14.0;   // ⬅️ main jump smaller
-  } else {
-    hero.vy = -19.0;   // ⬅️ second jump boost
-  }
-
+  hero.vy = onGround ? -14.0 : -19.0;
   hero.jumpsLeft -= 1;
 }
 
@@ -111,7 +134,6 @@ canvas.addEventListener("pointerdown", (e) => {
 }, { passive:false });
 
 function heroHitbox() {
-  // slightly smaller hitbox
   const padX = Math.floor(hero.w * 0.22);
   const padY = Math.floor(hero.h * 0.12);
   return { x: hero.x+padX, y: hero.y+padY, w: hero.w-padX*2, h: hero.h-padY*2 };
@@ -140,16 +162,39 @@ function step(dt) {
     hero.jumpsLeft = 2;
   }
 
+  // Edelweiss animation timer (always anim if loaded)
+  if (edelReady) {
+    edelTimer += dt;
+    const fd = 1000 / EDEL_FPS;
+    while (edelTimer >= fd) {
+      edelFrame = (edelFrame + 1) % EDEL_FRAMES;
+      edelTimer -= fd;
+    }
+  }
+
   // spawn obstacles only after delay
   const canSpawn = state.t >= OBSTACLE_DELAY_MS;
 
   spawnTimer -= 1;
   if (canSpawn && spawnTimer <= 0) {
-    const type = Math.random() < 0.33 ? "river" : (Math.random() < 0.5 ? "rock" : "tree");
+    // Replace "river" by edelweiss obstacle
+    const type = Math.random() < 0.33 ? "edelweiss" : (Math.random() < 0.5 ? "rock" : "tree");
 
-    // Slightly bigger obstacles; river a bit taller
-    const w = type === "river" ? 60 : (type === "tree" ? 30 : 24);
-    const h = type === "tree" ? 48 : (type === "river" ? 20 : 22); // ⬅️ river taller
+    let w, h;
+
+    if (type === "edelweiss") {
+      // Use sprite dimensions if available, else fallback
+      if (edelReady) {
+        w = Math.round(edelFrameW * EDEL_SCALE);
+        h = Math.round(edelFrameH * EDEL_SCALE);
+      } else {
+        w = 42; h = 34;
+      }
+    } else {
+      // simple rectangles for now
+      w = (type === "tree" ? 30 : 24);
+      h = (type === "tree" ? 48 : 22);
+    }
 
     obstacles.push({ type, x: W + 40, y: groundY - h, w, h });
 
@@ -194,13 +239,28 @@ function drawRunner() {
   ctx.drawImage(runnerImg, sx, 0, frameW, frameH, hero.x, hero.y, hero.w, hero.h);
 }
 
+function drawEdelweiss(o) {
+  if (!edelReady) {
+    // fallback rectangle
+    ctx.fillStyle = "#38bdf8";
+    ctx.fillRect(o.x, o.y, o.w, o.h);
+    return;
+  }
+  const sx = edelFrame * edelFrameW;
+  ctx.drawImage(
+    edelImg,
+    sx, 0, edelFrameW, edelFrameH,
+    o.x, o.y, o.w, o.h
+  );
+}
+
 // 2-layer parallax background
 function drawBackground() {
   ctx.fillStyle = "#0b1020";
   ctx.fillRect(0,0,W,H);
 
   // Layer 1: big distant mountains (slow)
-  const off1 = (state.t * 0.010) % W; // uses only time for reliable parallax
+  const off1 = (state.t * 0.010) % W;
   ctx.fillStyle = "#18233d";
   for (let i=0;i<4;i++){
     const x = -off1 + i*W;
@@ -220,7 +280,6 @@ function drawBackground() {
 }
 
 function draw() {
-  // background with 2 parallax layers
   drawBackground();
 
   // ground
@@ -229,10 +288,14 @@ function draw() {
   ctx.fillStyle = "#1e293b";
   ctx.fillRect(0, groundY, W, 6);
 
-  // obstacles (placeholder rectangles)
+  // obstacles
   for (const o of obstacles) {
-    ctx.fillStyle = o.type === "rock" ? "#94a3b8" : (o.type === "tree" ? "#22c55e" : "#38bdf8");
-    ctx.fillRect(o.x, o.y, o.w, o.h);
+    if (o.type === "edelweiss") {
+      drawEdelweiss(o);
+    } else {
+      ctx.fillStyle = o.type === "rock" ? "#94a3b8" : "#22c55e";
+      ctx.fillRect(o.x, o.y, o.w, o.h);
+    }
   }
 
   // hero
@@ -243,7 +306,7 @@ function draw() {
     ctx.fillRect(hero.x, hero.y, hero.w, hero.h);
   }
 
-  // UI
+  // UI (✅ corrigé)
   ctx.fillStyle = "#e2e8f0";
   ctx.font = "16px system-ui";
   ctx.fillText(`Score: ${Math.floor(state.score)}`, 16, 28);
@@ -259,7 +322,7 @@ function draw() {
     ctx.fillText("Tap to restart", 126, 330);
   }
 
-  // warmup countdown
+  // warmup countdown (✅ corrigé)
   if (!state.over && state.t < OBSTACLE_DELAY_MS) {
     const sLeft = Math.ceil((OBSTACLE_DELAY_MS - state.t) / 1000);
     ctx.fillStyle = "rgba(226,232,240,0.9)";
