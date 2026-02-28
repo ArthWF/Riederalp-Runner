@@ -11,6 +11,9 @@ const OBSTACLE_DELAY_MS = 5000;
 // Runner should sit a bit lower (touch the ground)
 const RUNNER_GROUND_OFFSET = 20; // px
 
+// Edelweiss should sit a bit lower (10px)
+const EDEL_GROUND_OFFSET = 10; // px
+
 // --------------------
 // Runner sprite sheet
 // --------------------
@@ -52,15 +55,15 @@ runnerImg.onerror = () => {
 const edelImg = new Image();
 edelImg.src = "assets/edelweiss.png";
 
-const EDEL_FRAMES = 3;          // ✅ ta sheet a 3 frames
+const EDEL_FRAMES = 3;
 let edelFrameW = 0;
 let edelFrameH = 0;
 let edelReady = false;
 
 let edelFrame = 0;
 let edelTimer = 0;
-const EDEL_FPS = 5;             // mouvement doux
-const EDEL_SCALE = 0.18;        // ajuste la taille
+const EDEL_FPS = 5;
+const EDEL_SCALE = 0.11;
 
 edelImg.onload = () => {
   edelReady = true;
@@ -162,7 +165,7 @@ function step(dt) {
     hero.jumpsLeft = 2;
   }
 
-  // Edelweiss animation timer (always anim if loaded)
+  // Edelweiss animation timer
   if (edelReady) {
     edelTimer += dt;
     const fd = 1000 / EDEL_FPS;
@@ -177,13 +180,11 @@ function step(dt) {
 
   spawnTimer -= 1;
   if (canSpawn && spawnTimer <= 0) {
-    // Replace "river" by edelweiss obstacle
     const type = Math.random() < 0.33 ? "edelweiss" : (Math.random() < 0.5 ? "rock" : "tree");
 
     let w, h;
 
     if (type === "edelweiss") {
-      // Use sprite dimensions if available, else fallback
       if (edelReady) {
         w = Math.round(edelFrameW * EDEL_SCALE);
         h = Math.round(edelFrameH * EDEL_SCALE);
@@ -191,12 +192,14 @@ function step(dt) {
         w = 42; h = 34;
       }
     } else {
-      // simple rectangles for now
       w = (type === "tree" ? 30 : 24);
       h = (type === "tree" ? 48 : 22);
     }
 
-    obstacles.push({ type, x: W + 40, y: groundY - h, w, h });
+    // ⬅️ Edelweiss 10px lower
+    const y = (type === "edelweiss") ? (groundY - h + EDEL_GROUND_OFFSET) : (groundY - h);
+
+    obstacles.push({ type, x: W + 40, y, w, h });
 
     spawnTimer = Math.floor(rand(75, 140) / (state.speed / 3.2));
   }
@@ -241,16 +244,19 @@ function drawRunner() {
 
 function drawEdelweiss(o) {
   if (!edelReady) {
-    // fallback rectangle
     ctx.fillStyle = "#38bdf8";
     ctx.fillRect(o.x, o.y, o.w, o.h);
     return;
   }
   const sx = edelFrame * edelFrameW;
+
+  // ⬅️ keep it 10px lower consistently (even if older obstacles exist)
+  const drawY = o.y + EDEL_GROUND_OFFSET;
+
   ctx.drawImage(
     edelImg,
     sx, 0, edelFrameW, edelFrameH,
-    o.x, o.y, o.w, o.h
+    o.x, drawY, o.w, o.h
   );
 }
 
@@ -259,7 +265,6 @@ function drawBackground() {
   ctx.fillStyle = "#0b1020";
   ctx.fillRect(0,0,W,H);
 
-  // Layer 1: big distant mountains (slow)
   const off1 = (state.t * 0.010) % W;
   ctx.fillStyle = "#18233d";
   for (let i=0;i<4;i++){
@@ -268,7 +273,6 @@ function drawBackground() {
     tri(x + 220, groundY-120, x + 390, groundY-320, x + 560, groundY-120);
   }
 
-  // Layer 2: closer smaller mountains (a bit faster)
   const off2 = (state.t * 0.020) % W;
   ctx.fillStyle = "#1f2a44";
   for (let i=0;i<4;i++){
@@ -282,13 +286,11 @@ function drawBackground() {
 function draw() {
   drawBackground();
 
-  // ground
   ctx.fillStyle = "#0f172a";
   ctx.fillRect(0, groundY, W, H-groundY);
   ctx.fillStyle = "#1e293b";
   ctx.fillRect(0, groundY, W, 6);
 
-  // obstacles
   for (const o of obstacles) {
     if (o.type === "edelweiss") {
       drawEdelweiss(o);
@@ -298,15 +300,12 @@ function draw() {
     }
   }
 
-  // hero
-  if (runnerReady) {
-    drawRunner();
-  } else {
+  if (runnerReady) drawRunner();
+  else {
     ctx.fillStyle = "#fbbf24";
     ctx.fillRect(hero.x, hero.y, hero.w, hero.h);
   }
 
-  // UI (✅ corrigé)
   ctx.fillStyle = "#e2e8f0";
   ctx.font = "16px system-ui";
   ctx.fillText(`Score: ${Math.floor(state.score)}`, 16, 28);
@@ -322,7 +321,6 @@ function draw() {
     ctx.fillText("Tap to restart", 126, 330);
   }
 
-  // warmup countdown (✅ corrigé)
   if (!state.over && state.t < OBSTACLE_DELAY_MS) {
     const sLeft = Math.ceil((OBSTACLE_DELAY_MS - state.t) / 1000);
     ctx.fillStyle = "rgba(226,232,240,0.9)";
