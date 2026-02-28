@@ -25,7 +25,7 @@ let runnerScale = 0.25; // si trop grand: 0.20 ; trop petit: 0.30
 // animation
 let animFrame = 0;
 let animTimer = 0;
-const ANIM_FPS = 12;
+const ANIM_FPS = 6;
 
 runnerImg.onload = () => {
   runnerReady = true;
@@ -46,7 +46,7 @@ runnerImg.onerror = () => {
 // --------------------
 const state = {
   t: 0,
-  speed: 3.2,
+  speed: 2.4,
   score: 0,
   best: Number(localStorage.getItem("rr_best") || 0),
   over: false,
@@ -68,7 +68,7 @@ const rand = (a,b)=> a + Math.random()*(b-a);
 
 function reset() {
   state.t = 0;
-  state.speed = 3.2;
+  state.speed = 2.4;
   state.score = 0;
   state.over = false;
 
@@ -86,7 +86,7 @@ function reset() {
 function jump() {
   if (state.over) return;
   if (hero.jumpsLeft <= 0) return;
-  hero.vy = -10.5;
+  hero.vy = -13.5;
   hero.jumpsLeft -= 1;
 }
 
