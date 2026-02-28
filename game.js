@@ -5,6 +5,9 @@ ctx.imageSmoothingEnabled = false;
 const W = canvas.width, H = canvas.height;
 const groundY = H - 110;
 
+// Obstacles start after 5s
+const OBSTACLE_DELAY_MS = 5000;
+
 // --------------------
 // Runner sprite sheet
 // --------------------
@@ -45,8 +48,8 @@ runnerImg.onerror = () => {
 // Game state
 // --------------------
 const state = {
-  t: 0,
-  speed: 2.0,
+  t: 0,       // ms
+  speed: 2.0, // départ plus lent
   score: 0,
   best: Number(localStorage.getItem("rr_best") || 0),
   over: false,
@@ -83,10 +86,19 @@ function reset() {
   animTimer = 0;
 }
 
+// Double jump: 2e tap en l’air = boost plus haut
 function jump() {
   if (state.over) return;
   if (hero.jumpsLeft <= 0) return;
-  hero.vy = -17.5;
+
+  const onGround = hero.y >= groundY - hero.h - 0.5;
+
+  if (onGround) {
+    hero.vy = -17.5;   // 1er saut
+  } else {
+    hero.vy = -21.5;   // 2e saut (boost)
+  }
+
   hero.jumpsLeft -= 1;
 }
 
@@ -110,8 +122,8 @@ function rectHit(a,b){
 function step(dt) {
   if (state.over) return;
 
-  // difficulté
-  state.speed = Math.min(7.2, state.speed + 0.0009);
+  // difficulté (accélère moins vite)
+  state.speed = Math.min(4.8, state.speed + 0.00035);
   state.score += 0.08 * state.speed;
 
   // gravité
@@ -125,12 +137,16 @@ function step(dt) {
     hero.jumpsLeft = 2;
   }
 
-  // spawn obstacles
+  // spawn obstacles seulement après 5 secondes
+  const canSpawn = state.t >= OBSTACLE_DELAY_MS;
+
   spawnTimer -= 1;
-  if (spawnTimer <= 0) {
+  if (canSpawn && spawnTimer <= 0) {
     const type = Math.random() < 0.33 ? "river" : (Math.random() < 0.5 ? "rock" : "tree");
-    const w = type === "river" ? 68 : (type === "tree" ? 36 : 30);
-    const h = type === "tree" ? 62 : (type === "river" ? 18 : 28);
+
+    // Obstacles plus petits
+    const w = type === "river" ? 52 : (type === "tree" ? 28 : 22);
+    const h = type === "tree" ? 44 : (type === "river" ? 14 : 20);
 
     obstacles.push({ type, x: W + 40, y: groundY - h, w, h });
 
@@ -181,8 +197,8 @@ function draw() {
   ctx.fillStyle = "#0b1020";
   ctx.fillRect(0,0,W,H);
 
-  // montagnes parallax (simple)
-  const mOff = (state.t * state.speed * 0.12) % W;
+  // montagnes parallax (plus lent)
+  const mOff = (state.t * state.speed * 0.05) % W;
   ctx.fillStyle = "#1f2a44";
   for (let i=0;i<3;i++){
     const x = -mOff + i*W;
@@ -224,6 +240,14 @@ function draw() {
     ctx.fillText("Game Over", 120, 300);
     ctx.font = "16px system-ui";
     ctx.fillText("Tap to restart", 126, 330);
+  }
+
+  // petit countdown info (optionnel)
+  if (!state.over && state.t < OBSTACLE_DELAY_MS) {
+    const sLeft = Math.ceil((OBSTACLE_DELAY_MS - state.t) / 1000);
+    ctx.fillStyle = "rgba(226,232,240,0.9)";
+    ctx.font = "14px system-ui";
+    ctx.fillText(`Warmup… ${sLeft}s`, 16, 72);
   }
 }
 
