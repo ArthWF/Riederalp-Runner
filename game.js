@@ -8,22 +8,24 @@ const groundY = H - 110;
 // Obstacles start after 5s
 const OBSTACLE_DELAY_MS = 5000;
 
+// Runner should sit a bit lower (touch the ground)
+const RUNNER_GROUND_OFFSET = 20; // px
+
 // --------------------
 // Runner sprite sheet
 // --------------------
 const runnerImg = new Image();
 runnerImg.src = "assets/runner.png";
 
-// 6 frames sur une ligne
+// 6 frames on one row
 const FRAME_COUNT = 6;
 
-// On calcule frameW/frameH une fois chargée
 let frameW = 0;
 let frameH = 0;
 let runnerReady = false;
 
-// scale d’affichage (à ajuster)
-let runnerScale = 0.25; // si trop grand: 0.20 ; trop petit: 0.30
+// display scale
+let runnerScale = 0.25;
 
 // animation
 let animFrame = 0;
@@ -37,11 +39,11 @@ runnerImg.onload = () => {
 
   hero.w = Math.round(frameW * runnerScale);
   hero.h = Math.round(frameH * runnerScale);
-  hero.y = groundY - hero.h;
+  hero.y = groundY - hero.h + RUNNER_GROUND_OFFSET; // ⬅️ sit lower
 };
 
 runnerImg.onerror = () => {
-  runnerReady = false; // le jeu continue en carré jaune
+  runnerReady = false;
 };
 
 // --------------------
@@ -49,7 +51,7 @@ runnerImg.onerror = () => {
 // --------------------
 const state = {
   t: 0,       // ms
-  speed: 2.0, // départ plus lent
+  speed: 2.0, // start slow
   score: 0,
   best: Number(localStorage.getItem("rr_best") || 0),
   over: false,
@@ -57,7 +59,7 @@ const state = {
 
 const hero = {
   x: 70,
-  y: groundY - 28,
+  y: groundY - 28 + RUNNER_GROUND_OFFSET, // ⬅️ sit lower (fallback too)
   w: 26,
   h: 28,
   vy: 0,
@@ -80,23 +82,23 @@ function reset() {
 
   hero.vy = 0;
   hero.jumpsLeft = 2;
-  hero.y = groundY - hero.h;
+  hero.y = groundY - hero.h + RUNNER_GROUND_OFFSET; // ⬅️ sit lower
 
   animFrame = 0;
   animTimer = 0;
 }
 
-// Double jump: 2e tap en l’air = boost plus haut
+// Double jump: main jump smaller, 2nd jump boost higher
 function jump() {
   if (state.over) return;
   if (hero.jumpsLeft <= 0) return;
 
-  const onGround = hero.y >= groundY - hero.h - 0.5;
+  const onGround = hero.y >= groundY - hero.h + RUNNER_GROUND_OFFSET - 0.5;
 
   if (onGround) {
-    hero.vy = -17.5;   // 1er saut
+    hero.vy = -14.0;   // ⬅️ main jump smaller
   } else {
-    hero.vy = -21.5;   // 2e saut (boost)
+    hero.vy = -19.0;   // ⬅️ second jump boost
   }
 
   hero.jumpsLeft -= 1;
@@ -109,7 +111,7 @@ canvas.addEventListener("pointerdown", (e) => {
 }, { passive:false });
 
 function heroHitbox() {
-  // hitbox un peu plus petite (plus agréable)
+  // slightly smaller hitbox
   const padX = Math.floor(hero.w * 0.22);
   const padY = Math.floor(hero.h * 0.12);
   return { x: hero.x+padX, y: hero.y+padY, w: hero.w-padX*2, h: hero.h-padY*2 };
@@ -122,39 +124,39 @@ function rectHit(a,b){
 function step(dt) {
   if (state.over) return;
 
-  // difficulté (accélère moins vite)
+  // difficulty (slow ramp)
   state.speed = Math.min(4.8, state.speed + 0.00035);
   state.score += 0.08 * state.speed;
 
-  // gravité
+  // gravity
   hero.vy += 0.55;
   hero.y += hero.vy;
 
-  // sol
-  if (hero.y >= groundY - hero.h) {
-    hero.y = groundY - hero.h;
+  // ground collision (with offset)
+  const groundHeroY = groundY - hero.h + RUNNER_GROUND_OFFSET;
+  if (hero.y >= groundHeroY) {
+    hero.y = groundHeroY;
     hero.vy = 0;
     hero.jumpsLeft = 2;
   }
 
-  // spawn obstacles seulement après 5 secondes
+  // spawn obstacles only after delay
   const canSpawn = state.t >= OBSTACLE_DELAY_MS;
 
   spawnTimer -= 1;
   if (canSpawn && spawnTimer <= 0) {
     const type = Math.random() < 0.33 ? "river" : (Math.random() < 0.5 ? "rock" : "tree");
 
-    // Obstacles plus petits
-    const w = type === "river" ? 52 : (type === "tree" ? 28 : 22);
-    const h = type === "tree" ? 44 : (type === "river" ? 14 : 20);
+    // Slightly bigger obstacles; river a bit taller
+    const w = type === "river" ? 60 : (type === "tree" ? 30 : 24);
+    const h = type === "tree" ? 48 : (type === "river" ? 20 : 22); // ⬅️ river taller
 
     obstacles.push({ type, x: W + 40, y: groundY - h, w, h });
 
-    // prochaine apparition (plus speed => spawn plus fréquent)
     spawnTimer = Math.floor(rand(75, 140) / (state.speed / 3.2));
   }
 
-  // déplacement obstacles
+  // move obstacles
   for (const o of obstacles) o.x -= state.speed;
   while (obstacles.length && obstacles[0].x + obstacles[0].w < -40) obstacles.shift();
 
@@ -169,8 +171,8 @@ function step(dt) {
     }
   }
 
-  // animation runner (seulement au sol)
-  const onGround = hero.y >= groundY - hero.h - 0.5;
+  // runner animation (only on ground)
+  const onGround = hero.y >= groundHeroY - 0.5;
   if (runnerReady && onGround) {
     animTimer += dt;
     const frameDuration = 1000 / ANIM_FPS;
@@ -192,21 +194,36 @@ function drawRunner() {
   ctx.drawImage(runnerImg, sx, 0, frameW, frameH, hero.x, hero.y, hero.w, hero.h);
 }
 
-function draw() {
-  // fond
+// 2-layer parallax background
+function drawBackground() {
   ctx.fillStyle = "#0b1020";
   ctx.fillRect(0,0,W,H);
 
-  // montagnes parallax (plus lent)
-  const mOff = (state.t * state.speed * 0.05) % W;
-  ctx.fillStyle = "#1f2a44";
-  for (let i=0;i<3;i++){
-    const x = -mOff + i*W;
-    tri(x+40, groundY-160, x+170, groundY-300, x+300, groundY-160);
-    tri(x+220, groundY-140, x+340, groundY-260, x+460, groundY-140);
+  // Layer 1: big distant mountains (slow)
+  const off1 = (state.t * 0.010) % W; // uses only time for reliable parallax
+  ctx.fillStyle = "#18233d";
+  for (let i=0;i<4;i++){
+    const x = -off1 + i*W;
+    tri(x + 10,  groundY-140, x + 180, groundY-340, x + 350, groundY-140);
+    tri(x + 220, groundY-120, x + 390, groundY-320, x + 560, groundY-120);
   }
 
-  // sol
+  // Layer 2: closer smaller mountains (a bit faster)
+  const off2 = (state.t * 0.020) % W;
+  ctx.fillStyle = "#1f2a44";
+  for (let i=0;i<4;i++){
+    const x = -off2 + i*W;
+    tri(x + 40,  groundY-120, x + 130, groundY-240, x + 220, groundY-120);
+    tri(x + 180, groundY-110, x + 270, groundY-220, x + 360, groundY-110);
+    tri(x + 300, groundY-125, x + 390, groundY-250, x + 480, groundY-125);
+  }
+}
+
+function draw() {
+  // background with 2 parallax layers
+  drawBackground();
+
+  // ground
   ctx.fillStyle = "#0f172a";
   ctx.fillRect(0, groundY, W, H-groundY);
   ctx.fillStyle = "#1e293b";
@@ -218,7 +235,7 @@ function draw() {
     ctx.fillRect(o.x, o.y, o.w, o.h);
   }
 
-  // héros
+  // hero
   if (runnerReady) {
     drawRunner();
   } else {
@@ -242,7 +259,7 @@ function draw() {
     ctx.fillText("Tap to restart", 126, 330);
   }
 
-  // petit countdown info (optionnel)
+  // warmup countdown
   if (!state.over && state.t < OBSTACLE_DELAY_MS) {
     const sLeft = Math.ceil((OBSTACLE_DELAY_MS - state.t) / 1000);
     ctx.fillStyle = "rgba(226,232,240,0.9)";
