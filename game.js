@@ -46,7 +46,7 @@ runnerImg.onerror = () => {
 // --------------------
 const state = {
   t: 0,
-  speed: 2.4,
+  speed: 2.0,
   score: 0,
   best: Number(localStorage.getItem("rr_best") || 0),
   over: false,
@@ -68,7 +68,7 @@ const rand = (a,b)=> a + Math.random()*(b-a);
 
 function reset() {
   state.t = 0;
-  state.speed = 2.4;
+  state.speed = 2.0;
   state.score = 0;
   state.over = false;
 
@@ -86,7 +86,7 @@ function reset() {
 function jump() {
   if (state.over) return;
   if (hero.jumpsLeft <= 0) return;
-  hero.vy = -13.5;
+  hero.vy = -17.5;
   hero.jumpsLeft -= 1;
 }
 
