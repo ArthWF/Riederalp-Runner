@@ -2,36 +2,57 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Riederalp Runner</title>
   <style>
-    html, body { margin:0; padding:0; height:100%; background:#0b1020; }
-    .wrap { height:100%; display:flex; align-items:center; justify-content:center; }
-    canvas{
-      width:min(100vw, 520px);
-      height:auto;
-      aspect-ratio: 9/16;
-      border-radius:16px;
-      image-rendering: pixelated;
-      background:#0b1020;
-      touch-action: none;
-      display:block;
+    :root { color-scheme: dark; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #0b1020;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
     }
+
+    .wrap{
+      height: 100%;
+      display: grid;
+      place-items: center;
+      padding: 16px;
+      box-sizing: border-box;
+    }
+
+    canvas{
+      display:block;
+      width: min(520px, 100%);
+      height: auto;            /* laisse le navigateur calculer */
+      border-radius: 16px;
+      image-rendering: pixelated;
+      background: #0b1020;
+      touch-action: none;
+      box-shadow: 0 10px 40px rgba(0,0,0,.35);
+      border: 1px solid rgba(255,255,255,.06);
+    }
+
     .hint{
-      position:fixed; bottom:10px; left:0; right:0;
-      text-align:center; color:#cbd5e1; font:14px system-ui;
-      opacity:.9;
-      user-select:none;
+      position: fixed;
+      left: 0; right: 0; bottom: 10px;
+      text-align: center;
+      color: #cbd5e1;
+      font-size: 14px;
+      opacity: .9;
+      user-select: none;
+      pointer-events: none;
     }
   </style>
 </head>
 <body>
   <div class="wrap">
+    <!-- IMPORTANT: on garde les dimensions "logiques" du jeu ici -->
     <canvas id="game" width="360" height="640"></canvas>
   </div>
+
   <div class="hint">Tap/click = jump • Tap to restart</div>
 
-  <!-- defer = garanti que le canvas existe avant le JS -->
   <script src="game.js" defer></script>
 </body>
 </html>
