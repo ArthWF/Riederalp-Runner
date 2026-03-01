@@ -409,3 +409,64 @@ function drawBackground() {
     tri(x + 300, groundY-125, x + 390, groundY-250, x + 480, groundY-125);
   }
 }
+
+function draw() {
+  drawBackground();
+
+  ctx.fillStyle = "#0f172a";
+  ctx.fillRect(0, groundY, W, H-groundY);
+  ctx.fillStyle = "#1e293b";
+  ctx.fillRect(0, groundY, W, 6);
+
+  for (const o of obstacles) {
+    if (o.type === "edelweiss") {
+      drawEdelweiss(o);
+    } else if (o.type === "alpenrose") {
+      drawAlpenrose(o);
+    } else {
+      ctx.fillStyle = o.type === "rock" ? "#94a3b8" : "#22c55e";
+      ctx.fillRect(o.x, o.y, o.w, o.h);
+    }
+  }
+
+  if (runnerReady) drawRunner();
+  else {
+    ctx.fillStyle = "#fbbf24";
+    ctx.fillRect(hero.x, hero.y, hero.w, hero.h);
+  }
+
+  ctx.fillStyle = "#e2e8f0";
+  ctx.font = "16px system-ui";
+  ctx.fillText(`Score: ${Math.floor(state.score)}`, 16, 28);
+  ctx.fillText(`Best: ${state.best}`, 16, 50);
+
+  if (state.over) {
+    ctx.fillStyle = "rgba(2,6,23,0.65)";
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = "#fff";
+    ctx.font = "22px system-ui";
+    ctx.fillText("Game Over", 120, 300);
+    ctx.font = "16px system-ui";
+    ctx.fillText("Tap to restart", 126, 330);
+  }
+
+  if (!state.over && state.t < OBSTACLE_DELAY_MS) {
+    const sLeft = Math.ceil((OBSTACLE_DELAY_MS - state.t) / 1000);
+    ctx.fillStyle = "rgba(226,232,240,0.9)";
+    ctx.font = "14px system-ui";
+    ctx.fillText(`Warmup… ${sLeft}s`, 16, 72);
+  }
+}
+
+let last = performance.now();
+function loop(now){
+  const dt = Math.min(32, now-last);
+  last = now;
+  state.t += dt;
+
+  step(dt);
+  draw();
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
