@@ -5,21 +5,35 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Riederalp Runner</title>
   <style>
+    :root { color-scheme: dark; }
     html, body { margin:0; height:100%; background:#0b1020; }
-    body { display:grid; place-items:center; font-family:system-ui; }
+    body{
+      display:grid;
+      place-items:center;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
     canvas{
-      width:min(520px, 100vw);
+      width:min(520px, calc(100vw - 24px));
       height:auto;
+      display:block;
+      border-radius:16px;
       image-rendering: pixelated;
       background:#0b1020;
-      border-radius:16px;
       touch-action:none;
-      display:block;
+      box-shadow: 0 10px 40px rgba(0,0,0,.35);
+      border: 1px solid rgba(255,255,255,.06);
+    }
+    .hint{
+      position:fixed; left:0; right:0; bottom:10px;
+      text-align:center; color:#cbd5e1; font-size:14px;
+      opacity:.9; user-select:none; pointer-events:none;
     }
   </style>
 </head>
 <body>
   <canvas id="game" width="360" height="640"></canvas>
+  <div class="hint">Tap/click = jump • Tap to restart</div>
+
   <script src="game.js" defer></script>
 </body>
 </html>
