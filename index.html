@@ -1,39 +1,38 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Riederalp Runner</title>
   <style>
-    :root { color-scheme: dark; }
-    html, body { margin:0; height:100%; background:#0b1020; }
-    body{
-      display:grid;
-      place-items:center;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-    }
-    canvas{
-      width:min(520px, calc(100vw - 24px));
-      height:auto;
-      display:block;
-      border-radius:16px;
-      image-rendering: pixelated;
-      background:#0b1020;
-      touch-action:none;
-      box-shadow: 0 10px 40px rgba(0,0,0,.35);
-      border: 1px solid rgba(255,255,255,.06);
-    }
-    .hint{
-      position:fixed; left:0; right:0; bottom:10px;
-      text-align:center; color:#cbd5e1; font-size:14px;
-      opacity:.9; user-select:none; pointer-events:none;
-    }
+    html, body { margin:0; height:100%; background:#0b1020; color:#e2e8f0; font-family:system-ui; }
+    body { display:grid; place-items:center; }
+    canvas { width:min(520px, calc(100vw - 24px)); height:auto; image-rendering: pixelated; border-radius:16px; background:#0b1020; touch-action:none; }
+    #status { position:fixed; top:8px; left:8px; font-size:12px; opacity:.85; }
   </style>
 </head>
 <body>
-  <canvas id="game" width="360" height="640"></canvas>
-  <div class="hint">Tap/click = jump • Tap to restart</div>
+  <div id="status">HTML loaded…</div>
 
-  <script src="game.js" defer></script>
+  <canvas id="game" width="360" height="640"></canvas>
+
+  <script>
+    // quick DOM check (if you don't see this updating, you're not on the right page)
+    const s = document.getElementById("status");
+    const c = document.getElementById("game");
+    s.textContent = c ? "Canvas found ✅ (loading game.js…)" : "Canvas NOT found ❌";
+  </script>
+
+  <!-- IMPORTANT: game.js must be in the same folder as index.html -->
+  <script src="./game.js" defer></script>
+
+  <script>
+    // if game.js doesn't load, we can detect it via onerror
+    const script = document.querySelector('script[src="./game.js"]');
+    script.onerror = () => {
+      document.getElementById("status").textContent =
+        "game.js failed to load ❌ (check file name/path/case + GitHub Pages settings)";
+    };
+  </script>
 </body>
 </html>
