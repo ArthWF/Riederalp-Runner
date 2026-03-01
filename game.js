@@ -5,20 +5,19 @@
   // Safe localStorage
   // --------------------
   function safeBestRead() {
-    try { return Number(localStorage.getItem("rr_best") || 0); }
-    catch { return 0; }
+    try { return Number(localStorage.getItem("rr_best") || 0); } catch { return 0; }
   }
   function safeBestWrite(v) {
     try { localStorage.setItem("rr_best", String(v)); } catch {}
   }
 
   // --------------------
-  // Canvas bootstrap
+  // Canvas
   // --------------------
   const canvas = document.getElementById("game");
-  if (!canvas) { console.error('Canvas "#game" introuvable.'); return; }
+  if (!canvas) return;
   const ctx = canvas.getContext("2d");
-  if (!ctx) { console.error("Contexte 2D indisponible."); return; }
+  if (!ctx) return;
   ctx.imageSmoothingEnabled = false;
 
   const W = canvas.width, H = canvas.height;
@@ -33,73 +32,84 @@
   const rand = (a, b) => a + Math.random() * (b - a);
 
   // --------------------
-  // Sprite helper (scale-only)
+  // Robust image loader (handles cached images)
+  // --------------------
+  function loadImage(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error(`Failed to load: ${src}`));
+
+      // set src AFTER handlers to avoid missing cached load event
+      img.src = src;
+
+      // if already cached/complete
+      if (img.complete) {
+        if (img.naturalWidth > 0) resolve(img);
+        else reject(new Error(`Failed to load: ${src}`));
+      }
+    });
+  }
+
+  // --------------------
+  // Sprite (scale-only)
   // --------------------
   function makeSprite(src, frames, fps, scale) {
-    const img = new Image();
-    img.src = src;
-
-    const spr = {
+    return {
       src,
-      img,
       frames,
       fps,
       scale,
-      ready: false,
+      img: null,
       frameW: 0,
       frameH: 0,
       frame: 0,
       timer: 0,
-    };
 
-    spr.load = () => new Promise((resolve, reject) => {
-      img.onload = () => {
-        spr.ready = true;
-        spr.frameW = Math.floor(img.width / frames);
-        spr.frameH = img.height;
-        resolve(spr);
-      };
-      img.onerror = () => {
-        spr.ready = false;
-        reject(new Error(`Failed to load: ${src}`));
-      };
-    });
+      async load() {
+        const img = await loadImage(src);
+        this.img = img;
+        this.frameW = Math.floor(img.width / frames);
+        this.frameH = img.height;
+      },
 
-    spr.draw = (frameIndex, dx, dy, dw, dh, alpha = 1) => {
-      const sx = frameIndex * spr.frameW;
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.drawImage(spr.img, sx, 0, spr.frameW, spr.frameH, dx, dy, dw, dh);
-      ctx.restore();
-    };
+      size() {
+        return {
+          w: Math.round(this.frameW * this.scale),
+          h: Math.round(this.frameH * this.scale),
+        };
+      },
 
-    spr.tick = (dt) => {
-      spr.timer += dt;
-      const fd = 1000 / spr.fps;
-      while (spr.timer >= fd) {
-        spr.frame = (spr.frame + 1) % spr.frames;
-        spr.timer -= fd;
+      tick(dt) {
+        this.timer += dt;
+        const fd = 1000 / this.fps;
+        while (this.timer >= fd) {
+          this.frame = (this.frame + 1) % this.frames;
+          this.timer -= fd;
+        }
+      },
+
+      draw(dx, dy, dw, dh, alpha = 1) {
+        const sx = this.frame * this.frameW;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.drawImage(this.img, sx, 0, this.frameW, this.frameH, dx, dy, dw, dh);
+        ctx.restore();
       }
     };
-
-    spr.size = () => ({
-      w: Math.round(spr.frameW * spr.scale),
-      h: Math.round(spr.frameH * spr.scale),
-    });
-
-    return spr;
   }
 
   // --------------------
-  // Sprites (ONLY SCALE used for sizing)
+  // Assets
   // --------------------
   const runner = makeSprite("assets/runner.png", 6, 6, 0.25);
   const edel   = makeSprite("assets/edelweiss.png", 3, 5, 0.11);
-  const alpen  = makeSprite("assets/alpenrose.png", 4, 3, 0.20); // <- FPS here (slower), scale here
+  const alpen  = makeSprite("assets/alpenrose.png", 4, 3, 0.20); // slower fps
   const cloud  = makeSprite("assets/cloud.png", 4, 4, 0.35);
 
   // --------------------
-  // Game state
+  // State
   // --------------------
   const state = {
     t: 0,
@@ -123,7 +133,6 @@
   const obstacles = [];
   let spawnTimer = 0;
 
-  // “nuages qui passent de temps en temps”
   const clouds = [];
   let cloudSpawnTimer = 0;
 
@@ -149,7 +158,7 @@
     cloud.frame = cloud.timer = 0;
   }
 
-  // Double jump: 2e saut plus petit
+  // Double jump: 2nd smaller
   function jump() {
     if (state.over) return;
     if (hero.jumpsLeft <= 0) return;
@@ -179,38 +188,20 @@
   }
 
   function spawnObstacle() {
-    // spawn only types whose sprites are ready (always true here after preload)
-    const r = Math.random();
-    const type =
-      r < 0.33 ? "edelweiss" :
-      r < 0.66 ? "alpenrose" :
-      (Math.random() < 0.5 ? "rock" : "tree");
-
+    const type = Math.random() < 0.5 ? "edelweiss" : "alpenrose";
     let w, h;
 
-    if (type === "edelweiss") {
-      ({ w, h } = edel.size());
-    } else if (type === "alpenrose") {
-      ({ w, h } = alpen.size());
-    } else if (type === "tree") {
-      // keep your old simple primitives as obstacles (pixels) OR remove them.
-      // If you want ABSOLUTE scale-only for EVERYTHING, you must also make tree/rock sprites.
-      // For now, keep them as primitives = second size logic.
-      // -> To stay 100% strict, we disable them:
-      return;
-    } else {
-      return;
-    }
+    if (type === "edelweiss") ({ w, h } = edel.size());
+    else ({ w, h } = alpen.size());
 
     let y = groundY - h;
-    if (type === "edelweiss") y = groundY - h + EDEL_GROUND_OFFSET;
-    if (type === "alpenrose") y = groundY - h + ALPEN_GROUND_OFFSET;
+    if (type === "edelweiss") y += EDEL_GROUND_OFFSET;
+    else y += ALPEN_GROUND_OFFSET;
 
     obstacles.push({ type, x: W + 40, y, w, h });
   }
 
   function spawnCloud() {
-    // instance scale (still scale logic, based on sprite frame size)
     const instScale = rand(0.22, 0.42);
     const y = rand(40, 170);
     const speed = rand(0.15, 0.45);
@@ -228,11 +219,9 @@
     state.speed = Math.min(4.8, state.speed + 0.00035);
     state.score += 0.08 * state.speed;
 
-    // gravity
     hero.vy += 0.55;
     hero.y += hero.vy;
 
-    // ground collision
     const groundHeroY = groundY - hero.h + RUNNER_GROUND_OFFSET;
     if (hero.y >= groundHeroY) {
       hero.y = groundHeroY;
@@ -240,16 +229,15 @@
       hero.jumpsLeft = 2;
     }
 
-    // animate sprites
+    // animate
     edel.tick(dt);
     alpen.tick(dt);
     cloud.tick(dt);
 
-    // runner anim only on ground
     const onGround = hero.y >= groundHeroY - 0.5;
     if (onGround) runner.tick(dt);
 
-    // obstacle spawning
+    // spawn obstacles
     const canSpawn = state.t >= OBSTACLE_DELAY_MS;
     spawnTimer -= 1;
     if (canSpawn && spawnTimer <= 0) {
@@ -261,7 +249,7 @@
     for (const o of obstacles) o.x -= state.speed;
     while (obstacles.length && obstacles[0].x + obstacles[0].w < -40) obstacles.shift();
 
-    // collisions
+    // collision
     const hb = heroHitbox();
     for (const o of obstacles) {
       if (rectHit(hb, o)) {
@@ -272,14 +260,12 @@
       }
     }
 
-    // cloud spawn
+    // clouds
     cloudSpawnTimer -= dt;
     if (cloudSpawnTimer <= 0) {
       spawnCloud();
       cloudSpawnTimer = rand(1800, 4500);
     }
-
-    // move clouds (parallax)
     for (const c of clouds) c.x -= (c.speed + state.speed * 0.10) * (dt / 16.67);
     while (clouds.length && clouds[0].x + clouds[0].w < -60) clouds.shift();
   }
@@ -314,9 +300,9 @@
       tri(x + 300, groundY - 125, x + 390, groundY - 250, x + 480, groundY - 125);
     }
 
-    // clouds passing
+    // clouds in front
     for (const c of clouds) {
-      cloud.draw(cloud.frame, Math.floor(c.x), Math.floor(c.y), c.w, c.h, c.alpha);
+      cloud.draw(Math.floor(c.x), Math.floor(c.y), c.w, c.h, c.alpha);
     }
   }
 
@@ -329,16 +315,13 @@
 
   function drawObstacles() {
     for (const o of obstacles) {
-      if (o.type === "edelweiss") {
-        edel.draw(edel.frame, o.x, o.y, o.w, o.h);
-      } else if (o.type === "alpenrose") {
-        alpen.draw(alpen.frame, o.x, o.y, o.w, o.h);
-      }
+      if (o.type === "edelweiss") edel.draw(o.x, o.y, o.w, o.h);
+      else alpen.draw(o.x, o.y, o.w, o.h);
     }
   }
 
   function drawRunner() {
-    runner.draw(runner.frame, hero.x, hero.y, hero.w, hero.h);
+    runner.draw(hero.x, hero.y, hero.w, hero.h);
   }
 
   function drawUI() {
@@ -378,6 +361,7 @@
       ctx.fillText("ERROR:", 16, 60);
       ctx.fillStyle = "#e2e8f0";
       ctx.fillText(state.loadError, 16, 82);
+      ctx.fillText("Check /assets filenames (case-sensitive).", 16, 108);
     }
   }
 
@@ -393,6 +377,9 @@
     drawUI();
   }
 
+  // --------------------
+  // Main loop runs ALWAYS (even while loading)
+  // --------------------
   let last = performance.now();
   function loop(now) {
     const dt = Math.min(32, now - last);
@@ -404,13 +391,15 @@
 
     requestAnimationFrame(loop);
   }
+  requestAnimationFrame(loop);
 
   // --------------------
-  // Preload ALL sprites, then start
+  // Preload, then start
   // --------------------
-  Promise.all([runner.load(), edel.load(), alpen.load(), cloud.load()])
-    .then(() => {
-      // init hero size from runner ONLY (scale-only)
+  (async () => {
+    try {
+      await Promise.all([runner.load(), edel.load(), alpen.load(), cloud.load()]);
+
       const hs = runner.size();
       hero.w = hs.w;
       hero.h = hs.h;
@@ -418,16 +407,10 @@
 
       state.started = true;
       reset();
-    })
-    .catch((err) => {
-      state.loadError = String(err.message || err);
+    } catch (err) {
+      state.loadError = String(err?.message || err);
       console.error(err);
-    })
-    .finally(() => {
-      requestAnimationFrame(loop);
-    });
+    }
+  })();
 
-})();
-  // Start
-  requestAnimationFrame(loop);
 })();
