@@ -68,7 +68,7 @@
   // --------------------
   const runner = makeSprite("assets/runner.png", 6, 6, 0.25);
   const edel   = makeSprite("assets/edelweiss.png", 3, 5, 0.11);
-  const alpen  = makeSprite("assets/alpenrose.png", 4, 6, 0.12);
+  const alpen  = makeSprite("assets/alpenrose.png", 4, 6, 0.25);
   const cloud  = makeSprite("assets/cloud.png", 4, 4, 0.35);
 
   // --------------------
