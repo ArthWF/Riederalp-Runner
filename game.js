@@ -177,7 +177,7 @@
       if (edel.ready) {
         w = Math.round(edel.frameW * edel.scale);
         h = Math.round(edel.frameH * edel.scale);
-      } else { w = 42; h = 34; }
+      } else { w = 84; h = 68; }
     } else if (type === "alpenrose") {
       if (alpen.ready) {
         w = Math.round(alpen.frameW * alpen.scale);
