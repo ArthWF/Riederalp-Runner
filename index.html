@@ -1,9 +1,74 @@
 <!doctype html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Riederalp Runner</title></head>
-<body style="margin:0;background:#0b1020;">
-  <canvas id="game" width="360" height="640"></canvas>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Riederalp Runner</title>
+  <style>
+    :root { color-scheme: dark; }
+
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #0b1020;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+
+    /* centre le "cadre" du jeu */
+    .wrap {
+      height: 100%;
+      display: grid;
+      place-items: center;
+      padding: 16px;
+      box-sizing: border-box;
+    }
+
+    /* fenêtre (card) qui se resize */
+    .frame {
+      width: min(560px, 100%);
+      aspect-ratio: 9 / 16;
+      border-radius: 18px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,.08);
+      box-shadow: 0 18px 60px rgba(0,0,0,.45);
+      background: #0b1020;
+      display: grid;
+      place-items: center;
+      position: relative;
+    }
+
+    /* le canvas garde son ratio, s’adapte à la frame */
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      image-rendering: pixelated;
+      background: #0b1020;
+      touch-action: none;
+    }
+
+    .hint{
+      position:absolute;
+      left:0; right:0; bottom:10px;
+      text-align:center;
+      color:#cbd5e1;
+      font-size: 14px;
+      opacity:.9;
+      user-select:none;
+      pointer-events:none;
+      text-shadow: 0 2px 10px rgba(0,0,0,.5);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="frame">
+      <!-- résolution interne du jeu (logique) -->
+      <canvas id="game" width="360" height="640"></canvas>
+      <div class="hint">Tap/click = jump • Tap to restart</div>
+    </div>
+  </div>
+
   <script src="./game.js" defer></script>
 </body>
 </html>
