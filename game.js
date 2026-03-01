@@ -68,7 +68,7 @@
   // --------------------
   const runner = makeSprite("assets/runner.png", 6, 6, 0.25);
   const edel   = makeSprite("assets/edelweiss.png", 3, 5, 0.11);
-  const alpen  = makeSprite("assets/alpenrose.png", 4, 6, 0.7);
+  const alpen  = makeSprite("assets/alpenrose.png", 4, 6, 0.20);
   const cloud  = makeSprite("assets/cloud.png", 4, 4, 0.35);
 
   // --------------------
@@ -177,7 +177,7 @@
       if (edel.ready) {
         w = Math.round(edel.frameW * edel.scale);
         h = Math.round(edel.frameH * edel.scale);
-      } else { w = 84; h = 68; }
+      } else { w = 60; h = 43; }
     } else if (type === "alpenrose") {
       if (alpen.ready) {
         w = Math.round(alpen.frameW * alpen.scale);
