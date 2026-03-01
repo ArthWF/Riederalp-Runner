@@ -1,12 +1,14 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Riederalp Runner</title>
   <style>
-    html, body { margin:0; height:100%; background:#0b1020; color:#e2e8f0; font-family:system-ui; }
-    body { display:grid; place-items:center; }
+    :root { color-scheme: dark; }
+    html, body { margin:0; height:100%; background:#0b1020; }
+    body { display:grid; place-items:center; font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+
     canvas{
       width:min(520px, calc(100vw - 24px));
       height:auto;
@@ -18,35 +20,18 @@
       box-shadow: 0 10px 40px rgba(0,0,0,.35);
       display:block;
     }
-    #status{
-      position:fixed; top:8px; left:8px;
-      font-size:12px; opacity:.85;
-      background: rgba(2,6,23,.55);
-      padding:6px 8px; border-radius:8px;
-    }
+
     .hint{
       position:fixed; left:0; right:0; bottom:10px;
-      text-align:center; font-size:14px; opacity:.9;
-      pointer-events:none; user-select:none;
+      text-align:center; color:#cbd5e1; font-size:14px;
+      opacity:.9; user-select:none; pointer-events:none;
     }
   </style>
 </head>
 <body>
-  <div id="status">HTML loaded…</div>
   <canvas id="game" width="360" height="640"></canvas>
   <div class="hint">Tap/click = jump • Tap to restart</div>
 
-  <script>
-    const s = document.getElementById("status");
-    s.textContent = document.getElementById("game") ? "Canvas found ✅ Loading game.js…" : "Canvas missing ❌";
-  </script>
-
   <script src="./game.js" defer></script>
-
-  <script>
-    const sc = document.querySelector('script[src="./game.js"]');
-    sc.onerror = () => document.getElementById("status").textContent =
-      "game.js failed to load ❌ (wrong path/name/case or not in repo root)";
-  </script>
 </body>
 </html>
