@@ -7,18 +7,21 @@
   <style>
     html, body { margin:0; padding:0; height:100%; background:#0b1020; }
     .wrap { height:100%; display:flex; align-items:center; justify-content:center; }
-    canvas {
+    canvas{
       width:min(100vw, 520px);
       height:auto;
       aspect-ratio: 9/16;
       border-radius:16px;
       image-rendering: pixelated;
       background:#0b1020;
+      touch-action: none;
+      display:block;
     }
     .hint{
       position:fixed; bottom:10px; left:0; right:0;
       text-align:center; color:#cbd5e1; font:14px system-ui;
       opacity:.9;
+      user-select:none;
     }
   </style>
 </head>
@@ -28,6 +31,7 @@
   </div>
   <div class="hint">Tap/click = jump • Tap to restart</div>
 
-  <script src="game.js"></script>
+  <!-- defer = garanti que le canvas existe avant le JS -->
+  <script src="game.js" defer></script>
 </body>
 </html>
