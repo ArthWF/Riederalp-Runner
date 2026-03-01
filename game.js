@@ -11,8 +11,9 @@ const OBSTACLE_DELAY_MS = 5000;
 // Runner should sit a bit lower (touch the ground)
 const RUNNER_GROUND_OFFSET = 20; // px
 
-// Edelweiss should sit a bit lower (10px)
-const EDEL_GROUND_OFFSET = 10; // px
+// Obstacle offsets
+const EDEL_GROUND_OFFSET = 10;   // px (sit a bit lower)
+const ALPEN_GROUND_OFFSET = 6;   // px (tweak if needed)
 
 // --------------------
 // Runner sprite sheet
@@ -75,6 +76,60 @@ edelImg.onerror = () => {
 };
 
 // --------------------
+// Alpenrose sprite sheet (4 frames)
+// --------------------
+const alpenImg = new Image();
+alpenImg.src = "assets/alpenrose.png";
+
+const ALPEN_FRAMES = 4;
+let alpenFrameW = 0;
+let alpenFrameH = 0;
+let alpenReady = false;
+
+let alpenFrame = 0;
+let alpenTimer = 0;
+const ALPEN_FPS = 6;
+const ALPEN_SCALE = 0.12;
+
+alpenImg.onload = () => {
+  alpenReady = true;
+  alpenFrameW = Math.floor(alpenImg.width / ALPEN_FRAMES);
+  alpenFrameH = alpenImg.height;
+};
+alpenImg.onerror = () => {
+  alpenReady = false;
+};
+
+// --------------------
+// Cloud sprite sheet (4 frames) - background decor
+// --------------------
+const cloudImg = new Image();
+cloudImg.src = "assets/cloud.png";
+
+const CLOUD_FRAMES = 4;
+let cloudFrameW = 0;
+let cloudFrameH = 0;
+let cloudReady = false;
+
+let cloudFrame = 0;
+let cloudTimer = 0;
+const CLOUD_FPS = 4;
+const CLOUD_SCALE = 0.35;
+
+// parallax speeds (px/ms)
+const CLOUD_SPEED_NEAR = 0.030;
+const CLOUD_SPEED_FAR  = 0.015;
+
+cloudImg.onload = () => {
+  cloudReady = true;
+  cloudFrameW = Math.floor(cloudImg.width / CLOUD_FRAMES);
+  cloudFrameH = cloudImg.height;
+};
+cloudImg.onerror = () => {
+  cloudReady = false;
+};
+
+// --------------------
 // Game state
 // --------------------
 const state = {
@@ -117,16 +172,25 @@ function reset() {
 
   edelFrame = 0;
   edelTimer = 0;
+
+  alpenFrame = 0;
+  alpenTimer = 0;
+
+  cloudFrame = 0;
+  cloudTimer = 0;
 }
 
-// Double jump: main jump smaller, 2nd jump boost higher
+// Double jump: 2nd jump smaller
 function jump() {
   if (state.over) return;
   if (hero.jumpsLeft <= 0) return;
 
-  const onGround = hero.y >= groundY - hero.h + RUNNER_GROUND_OFFSET - 0.5;
+  const groundHeroY = groundY - hero.h + RUNNER_GROUND_OFFSET;
+  const onGround = hero.y >= groundHeroY - 0.5;
 
-  hero.vy = onGround ? -14.0 : -19.0;
+  // 1st jump strong, 2nd jump smaller
+  hero.vy = onGround ? -14.0 : -11.5;
+
   hero.jumpsLeft -= 1;
 }
 
@@ -175,12 +239,37 @@ function step(dt) {
     }
   }
 
+  // Alpenrose animation timer
+  if (alpenReady) {
+    alpenTimer += dt;
+    const fd = 1000 / ALPEN_FPS;
+    while (alpenTimer >= fd) {
+      alpenFrame = (alpenFrame + 1) % ALPEN_FRAMES;
+      alpenTimer -= fd;
+    }
+  }
+
+  // Cloud animation timer
+  if (cloudReady) {
+    cloudTimer += dt;
+    const fd = 1000 / CLOUD_FPS;
+    while (cloudTimer >= fd) {
+      cloudFrame = (cloudFrame + 1) % CLOUD_FRAMES;
+      cloudTimer -= fd;
+    }
+  }
+
   // spawn obstacles only after delay
   const canSpawn = state.t >= OBSTACLE_DELAY_MS;
 
   spawnTimer -= 1;
   if (canSpawn && spawnTimer <= 0) {
-    const type = Math.random() < 0.33 ? "edelweiss" : (Math.random() < 0.5 ? "rock" : "tree");
+    // weights: edelweiss 25%, alpenrose 25%, rock/tree 50%
+    const r = Math.random();
+    const type =
+      r < 0.25 ? "edelweiss" :
+      r < 0.50 ? "alpenrose" :
+      (Math.random() < 0.5 ? "rock" : "tree");
 
     let w, h;
 
@@ -188,16 +277,21 @@ function step(dt) {
       if (edelReady) {
         w = Math.round(edelFrameW * EDEL_SCALE);
         h = Math.round(edelFrameH * EDEL_SCALE);
-      } else {
-        w = 42; h = 34;
-      }
+      } else { w = 42; h = 34; }
+    } else if (type === "alpenrose") {
+      if (alpenReady) {
+        w = Math.round(alpenFrameW * ALPEN_SCALE);
+        h = Math.round(alpenFrameH * ALPEN_SCALE);
+      } else { w = 44; h = 36; }
     } else {
       w = (type === "tree" ? 30 : 24);
       h = (type === "tree" ? 48 : 22);
     }
 
-    // ⬅️ Edelweiss 10px lower
-    const y = (type === "edelweiss") ? (groundY - h + EDEL_GROUND_OFFSET) : (groundY - h);
+    // y placement (offset applied ONCE here)
+    let y = groundY - h;
+    if (type === "edelweiss") y = groundY - h + EDEL_GROUND_OFFSET;
+    if (type === "alpenrose") y = groundY - h + ALPEN_GROUND_OFFSET;
 
     obstacles.push({ type, x: W + 40, y, w, h });
 
@@ -249,21 +343,51 @@ function drawEdelweiss(o) {
     return;
   }
   const sx = edelFrame * edelFrameW;
-
-  // ⬅️ keep it 10px lower consistently (even if older obstacles exist)
-  const drawY = o.y + EDEL_GROUND_OFFSET;
-
-  ctx.drawImage(
-    edelImg,
-    sx, 0, edelFrameW, edelFrameH,
-    o.x, drawY, o.w, o.h
-  );
+  ctx.drawImage(edelImg, sx, 0, edelFrameW, edelFrameH, o.x, o.y, o.w, o.h);
 }
 
-// 2-layer parallax background
+function drawAlpenrose(o) {
+  if (!alpenReady) {
+    ctx.fillStyle = "#fb7185";
+    ctx.fillRect(o.x, o.y, o.w, o.h);
+    return;
+  }
+  const sx = alpenFrame * alpenFrameW;
+  ctx.drawImage(alpenImg, sx, 0, alpenFrameW, alpenFrameH, o.x, o.y, o.w, o.h);
+}
+
+// Animated cloud layer (repeat tile)
+function drawCloudLayer(speedPxPerMs, y, alpha, scale) {
+  if (!cloudReady) return;
+
+  const tileW = Math.round(cloudFrameW * scale);
+  const tileH = Math.round(cloudFrameH * scale);
+
+  const off = (state.t * speedPxPerMs) % tileW;
+  const sx = cloudFrame * cloudFrameW;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  // draw enough tiles to cover screen
+  for (let x = -off - tileW; x < W + tileW; x += tileW) {
+    ctx.drawImage(
+      cloudImg,
+      sx, 0, cloudFrameW, cloudFrameH,
+      Math.floor(x), Math.floor(y), tileW, tileH
+    );
+  }
+
+  ctx.restore();
+}
+
+// 2-layer parallax background + cloud decor
 function drawBackground() {
   ctx.fillStyle = "#0b1020";
   ctx.fillRect(0,0,W,H);
+
+  // FAR clouds
+  drawCloudLayer(CLOUD_SPEED_FAR, 60, 0.55, CLOUD_SCALE * 0.85);
 
   const off1 = (state.t * 0.010) % W;
   ctx.fillStyle = "#18233d";
@@ -272,6 +396,9 @@ function drawBackground() {
     tri(x + 10,  groundY-140, x + 180, groundY-340, x + 350, groundY-140);
     tri(x + 220, groundY-120, x + 390, groundY-320, x + 560, groundY-120);
   }
+
+  // NEAR clouds
+  drawCloudLayer(CLOUD_SPEED_NEAR, 95, 0.70, CLOUD_SCALE);
 
   const off2 = (state.t * 0.020) % W;
   ctx.fillStyle = "#1f2a44";
@@ -282,62 +409,3 @@ function drawBackground() {
     tri(x + 300, groundY-125, x + 390, groundY-250, x + 480, groundY-125);
   }
 }
-
-function draw() {
-  drawBackground();
-
-  ctx.fillStyle = "#0f172a";
-  ctx.fillRect(0, groundY, W, H-groundY);
-  ctx.fillStyle = "#1e293b";
-  ctx.fillRect(0, groundY, W, 6);
-
-  for (const o of obstacles) {
-    if (o.type === "edelweiss") {
-      drawEdelweiss(o);
-    } else {
-      ctx.fillStyle = o.type === "rock" ? "#94a3b8" : "#22c55e";
-      ctx.fillRect(o.x, o.y, o.w, o.h);
-    }
-  }
-
-  if (runnerReady) drawRunner();
-  else {
-    ctx.fillStyle = "#fbbf24";
-    ctx.fillRect(hero.x, hero.y, hero.w, hero.h);
-  }
-
-  ctx.fillStyle = "#e2e8f0";
-  ctx.font = "16px system-ui";
-  ctx.fillText(`Score: ${Math.floor(state.score)}`, 16, 28);
-  ctx.fillText(`Best: ${state.best}`, 16, 50);
-
-  if (state.over) {
-    ctx.fillStyle = "rgba(2,6,23,0.65)";
-    ctx.fillRect(0,0,W,H);
-    ctx.fillStyle = "#fff";
-    ctx.font = "22px system-ui";
-    ctx.fillText("Game Over", 120, 300);
-    ctx.font = "16px system-ui";
-    ctx.fillText("Tap to restart", 126, 330);
-  }
-
-  if (!state.over && state.t < OBSTACLE_DELAY_MS) {
-    const sLeft = Math.ceil((OBSTACLE_DELAY_MS - state.t) / 1000);
-    ctx.fillStyle = "rgba(226,232,240,0.9)";
-    ctx.font = "14px system-ui";
-    ctx.fillText(`Warmup… ${sLeft}s`, 16, 72);
-  }
-}
-
-let last = performance.now();
-function loop(now){
-  const dt = Math.min(32, now-last);
-  last = now;
-  state.t += dt;
-
-  step(dt);
-  draw();
-
-  requestAnimationFrame(loop);
-}
-requestAnimationFrame(loop);
