@@ -8,15 +8,53 @@
   const safeBestWrite = (v) => { try { localStorage.setItem("rr_best", String(v)); } catch {} };
 
   // --------------------
-  // Canvas
+  // Canvas (logical size)
   // --------------------
   const canvas = document.getElementById("game");
   if (!canvas) return;
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { alpha: true });
   if (!ctx) return;
-  ctx.imageSmoothingEnabled = false;
 
-  const W = canvas.width, H = canvas.height;
+  // Logical game resolution (your existing)
+  const LOGICAL_W = canvas.width || 360;
+  const LOGICAL_H = canvas.height || 640;
+
+  // We will render in logical coordinates, but set backing store to DPR
+  let DPR = 1;
+
+  function applyPixelPerfectResize() {
+    DPR = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+
+    // Choose an integer scale for CSS display (x1, x2, x3...) so no fractional scaling.
+    // Fits within viewport minus padding.
+    const pad = 24;
+    const maxCssW = Math.max(200, window.innerWidth - pad);
+    const maxCssH = Math.max(200, window.innerHeight - pad);
+
+    const scaleW = Math.floor(maxCssW / LOGICAL_W);
+    const scaleH = Math.floor(maxCssH / LOGICAL_H);
+    const cssScale = Math.max(1, Math.min(scaleW, scaleH));
+
+    const cssW = LOGICAL_W * cssScale;
+    const cssH = LOGICAL_H * cssScale;
+
+    // Set CSS size to integer pixels
+    canvas.style.width = cssW + "px";
+    canvas.style.height = cssH + "px";
+
+    // Set backing store to DPR * logical size (NOT css size)
+    canvas.width = Math.floor(LOGICAL_W * DPR);
+    canvas.height = Math.floor(LOGICAL_H * DPR);
+
+    // All drawing will be in logical units
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+  }
+
+  window.addEventListener("resize", applyPixelPerfectResize);
+  applyPixelPerfectResize();
+
+  const W = LOGICAL_W, H = LOGICAL_H;
   const groundY = H - 110;
 
   const OBSTACLE_DELAY_MS = 5000;
@@ -35,34 +73,21 @@
   panoImg.onerror = () => { panoImg.__ok = false; console.warn("Asset failed: assets/RR-Panorama.png"); };
   panoImg.src = "assets/RR-Panorama.png";
 
-  // Speed tuning
-  const PANO_BASE_SPEED = 0.018;     // px/ms
-  const PANO_SPEED_FACTOR = 0.14;    // linked to runner speed
-
-  // pano up by 30px
-  const PANO_Y = -30;
-
-  // solid base color (behind transparent pano)
   const SKY_COLOR = "#0b1020";
 
+  // pano speed
+  const PANO_BASE_SPEED = 0.018;     // px/ms
+  const PANO_SPEED_FACTOR = 0.14;    // linked to runner speed
+  const PANO_Y = -30;                // raise pano by 30px
+
   // --------------------
-  // TWO size logics
+  // TWO size logics sprites
   // --------------------
   function makeSprite({ src, frames, fps, scale, fallbackW, fallbackH }) {
     const img = new Image();
     const spr = {
-      img,
-      src,
-      frames,
-      fps,
-      scale,
-      fallbackW,
-      fallbackH,
-      ready: false,
-      frameW: 0,
-      frameH: 0,
-      frame: 0,
-      timer: 0,
+      img, src, frames, fps, scale, fallbackW, fallbackH,
+      ready: false, frameW: 0, frameH: 0, frame: 0, timer: 0,
     };
 
     img.onload = () => {
@@ -74,7 +99,6 @@
       spr.ready = false;
       console.warn("Asset failed:", src);
     };
-
     img.src = src;
 
     spr.size = () => {
@@ -99,6 +123,7 @@
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.globalCompositeOperation = "source-over";
+      ctx.imageSmoothingEnabled = false;
       ctx.drawImage(spr.img, sx, 0, spr.frameW, spr.frameH, dx, dy, dw, dh);
       ctx.restore();
       return true;
@@ -107,13 +132,10 @@
     return spr;
   }
 
-  // --------------------
-  // Sprites
-  // --------------------
-  const runner = makeSprite({ src: "assets/runner.png", frames: 6, fps: 6, scale: 0.25, fallbackW: 42, fallbackH: 46 });
-  const edel   = makeSprite({ src: "assets/edelweiss.png", frames: 3, fps: 5, scale: 0.11, fallbackW: 42, fallbackH: 34 });
-  const alpen  = makeSprite({ src: "assets/alpenrose.png", frames: 4, fps: 3, scale: 0.20, fallbackW: 47, fallbackH: 40 });
-  const cloud  = makeSprite({ src: "assets/cloud.png", frames: 4, fps: 4, scale: 0.35, fallbackW: 90, fallbackH: 48 });
+  const runner = makeSprite({ src:"assets/runner.png", frames:6, fps:6, scale:0.25, fallbackW:42, fallbackH:46 });
+  const edel   = makeSprite({ src:"assets/edelweiss.png", frames:3, fps:5, scale:0.11, fallbackW:42, fallbackH:34 });
+  const alpen  = makeSprite({ src:"assets/alpenrose.png", frames:4, fps:3, scale:0.20, fallbackW:47, fallbackH:40 });
+  const cloud  = makeSprite({ src:"assets/cloud.png", frames:4, fps:4, scale:0.35, fallbackW:90, fallbackH:48 });
 
   // --------------------
   // State
@@ -128,7 +150,6 @@
   };
 
   const hero = { x: 70, y: 0, w: 42, h: 46, vy: 0, jumpsLeft: 2 };
-
   const obstacles = [];
   let spawnTimer = 0;
 
@@ -149,8 +170,7 @@
     cloudSpawnTimer = 0;
 
     const hs = runner.size();
-    hero.w = hs.w;
-    hero.h = hs.h;
+    hero.w = hs.w; hero.h = hs.h;
     hero.vy = 0;
     hero.jumpsLeft = 2;
     hero.y = groundY - hero.h + RUNNER_GROUND_OFFSET;
@@ -176,15 +196,14 @@
     e.preventDefault();
     if (state.over) { reset(); return; }
     jump();
-  }, { passive: false });
+  }, { passive:false });
 
   function heroHitbox() {
     const padX = Math.floor(hero.w * 0.22);
     const padY = Math.floor(hero.h * 0.12);
-    return { x: hero.x + padX, y: hero.y + padY, w: hero.w - padX * 2, h: hero.h - padY * 2 };
+    return { x: hero.x+padX, y: hero.y+padY, w: hero.w-padX*2, h: hero.h-padY*2 };
   }
-
-  function rectHit(a, b) {
+  function rectHit(a,b){
     return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
   }
 
@@ -206,7 +225,6 @@
 
     const instScale = rand(0.22, 0.42);
     let w, h;
-
     if (cloud.ready) {
       w = Math.round(cloud.frameW * instScale);
       h = Math.round(cloud.frameH * instScale);
@@ -214,7 +232,6 @@
       w = Math.round(cloud.fallbackW * instScale);
       h = Math.round(cloud.fallbackH * instScale);
     }
-
     clouds.push({ x: W + 30, y, w, h, speed, alpha });
   }
 
@@ -227,25 +244,21 @@
     if (runner.ready && onGroundBefore) {
       const hs = runner.size();
       if (hs.w !== hero.w || hs.h !== hero.h) {
-        hero.w = hs.w;
-        hero.h = hs.h;
+        hero.w = hs.w; hero.h = hs.h;
         hero.y = groundY - hero.h + RUNNER_GROUND_OFFSET;
       }
     }
 
-    // difficulty
     state.speed = Math.min(4.8, state.speed + 0.00035);
     state.score += 0.08 * state.speed;
 
-    // panorama scroll (source px)
+    // integer scrolling (prevents subpixel shimmering)
     const panoSpeed = PANO_BASE_SPEED + (state.speed * PANO_SPEED_FACTOR * 0.001);
     state.panoX += dt * panoSpeed;
 
-    // gravity
     hero.vy += 0.55;
     hero.y += hero.vy;
 
-    // ground
     const groundHeroY = groundY - hero.h + RUNNER_GROUND_OFFSET;
     if (hero.y >= groundHeroY) {
       hero.y = groundHeroY;
@@ -253,13 +266,11 @@
       hero.jumpsLeft = 2;
     }
 
-    // sprite anim
     edel.tick(dt);
     alpen.tick(dt);
     cloud.tick(dt);
     if (hero.y >= groundHeroY - 0.5) runner.tick(dt);
 
-    // obstacles spawn
     if (state.t >= OBSTACLE_DELAY_MS) {
       spawnTimer -= 1;
       if (spawnTimer <= 0) {
@@ -268,11 +279,9 @@
       }
     }
 
-    // move obstacles
     for (const o of obstacles) o.x -= state.speed;
     while (obstacles.length && obstacles[0].x + obstacles[0].w < -40) obstacles.shift();
 
-    // collisions
     const hb = heroHitbox();
     for (const o of obstacles) {
       if (rectHit(hb, o)) {
@@ -283,7 +292,6 @@
       }
     }
 
-    // clouds spawn/move
     cloudSpawnTimer -= dt;
     if (cloudSpawnTimer <= 0) {
       spawnCloud();
@@ -294,23 +302,20 @@
   }
 
   // --------------------
-  // Background rendering
+  // Draw pano (no trails) + fallback
   // --------------------
-  function tri(x1, y1, x2, y2, x3, y3) {
+  function tri(x1,y1,x2,y2,x3,y3){
     ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.lineTo(x3, y3);
-    ctx.closePath();
-    ctx.fill();
+    ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.lineTo(x3,y3);
+    ctx.closePath(); ctx.fill();
   }
 
-  // Draw pano with *hard overwrite* to eliminate trails
   function drawPanorama() {
-    // FORCE full overwrite of the previous frame
+    // Hard overwrite the whole frame (eliminates any perceived trails)
     ctx.save();
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.globalCompositeOperation = "copy";
     ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = "copy"; // <- key: replaces pixels (no blending with previous)
     ctx.fillStyle = SKY_COLOR;
     ctx.fillRect(0, 0, W, H);
     ctx.restore();
@@ -321,21 +326,21 @@
     const imgH = panoImg.height || 0;
     if (imgW <= 0 || imgH <= 0) return false;
 
-    // if pano is 4000x640 and canvas is 360x640 => scale = 1
+    // pano is 4000x640; canvas logical is 360x640 => scale normally is 1
     const scale = H / imgH;
-
-    // integer draw sizes
     const drawW = Math.round(imgW * scale);
     const drawH = Math.round(H);
 
-    // integer scroll in draw space
     const scrollPx = Math.floor(state.panoX * scale);
     let x = -(scrollPx % drawW);
     if (x > 0) x -= drawW;
 
     ctx.save();
-    ctx.globalAlpha = 1;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.imageSmoothingEnabled = false;
     ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1;
+
     for (; x < W; x += drawW) {
       ctx.drawImage(panoImg, x, PANO_Y, drawW, drawH);
     }
@@ -345,29 +350,30 @@
   }
 
   function drawFallbackMountains() {
-    // also hard overwrite (same anti-trails logic)
+    // Full overwrite too
     ctx.save();
-    ctx.globalAlpha = 1;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     ctx.globalCompositeOperation = "copy";
+    ctx.globalAlpha = 1;
     ctx.fillStyle = SKY_COLOR;
     ctx.fillRect(0, 0, W, H);
     ctx.restore();
 
     const off1 = (state.t * 0.010) % W;
     ctx.fillStyle = "#18233d";
-    for (let i = 0; i < 4; i++) {
-      const x = -off1 + i * W;
-      tri(x + 10,  groundY - 140, x + 180, groundY - 340, x + 350, groundY - 140);
-      tri(x + 220, groundY - 120, x + 390, groundY - 320, x + 560, groundY - 120);
+    for (let i=0;i<4;i++){
+      const x = -off1 + i*W;
+      tri(x + 10,  groundY-140, x + 180, groundY-340, x + 350, groundY-140);
+      tri(x + 220, groundY-120, x + 390, groundY-320, x + 560, groundY-120);
     }
 
     const off2 = (state.t * 0.020) % W;
     ctx.fillStyle = "#1f2a44";
-    for (let i = 0; i < 4; i++) {
-      const x = -off2 + i * W;
-      tri(x + 40,  groundY - 120, x + 130, groundY - 240, x + 220, groundY - 120);
-      tri(x + 180, groundY - 110, x + 270, groundY - 220, x + 360, groundY - 110);
-      tri(x + 300, groundY - 125, x + 390, groundY - 250, x + 480, groundY - 125);
+    for (let i=0;i<4;i++){
+      const x = -off2 + i*W;
+      tri(x + 40,  groundY-120, x + 130, groundY-240, x + 220, groundY-120);
+      tri(x + 180, groundY-110, x + 270, groundY-220, x + 360, groundY-110);
+      tri(x + 300, groundY-125, x + 390, groundY-250, x + 480, groundY-125);
     }
   }
 
@@ -375,7 +381,6 @@
     const ok = drawPanorama();
     if (!ok) drawFallbackMountains();
 
-    // clouds in front
     for (const c of clouds) {
       if (!cloud.draw(Math.floor(c.x), Math.floor(c.y), c.w, c.h, c.alpha)) {
         ctx.fillStyle = `rgba(226,232,240,${c.alpha})`;
@@ -386,7 +391,7 @@
 
   function drawGround() {
     ctx.fillStyle = "#0f172a";
-    ctx.fillRect(0, groundY, W, H - groundY);
+    ctx.fillRect(0, groundY, W, H-groundY);
     ctx.fillStyle = "#1e293b";
     ctx.fillRect(0, groundY, W, 6);
   }
@@ -419,35 +424,13 @@
     ctx.font = "16px system-ui";
     ctx.fillText(`Score: ${Math.floor(state.score)}`, 16, 28);
     ctx.fillText(`Best: ${state.best}`, 16, 50);
-
-    ctx.font = "12px system-ui";
-    ctx.fillText(
-      `assets: pano:${panoImg.__ok ? "ok" : ".."} runner:${runner.ready ? "ok" : ".."} edel:${edel.ready ? "ok" : ".."} alpen:${alpen.ready ? "ok" : ".."} cloud:${cloud.ready ? "ok" : ".."}`,
-      16, 70
-    );
-
-    if (state.over) {
-      ctx.fillStyle = "rgba(2,6,23,0.65)";
-      ctx.fillRect(0, 0, W, H);
-      ctx.fillStyle = "#fff";
-      ctx.font = "22px system-ui";
-      ctx.fillText("Game Over", 110, 300);
-      ctx.font = "16px system-ui";
-      ctx.fillText("Tap to restart", 112, 330);
-    }
-
-    if (!state.over && state.t < OBSTACLE_DELAY_MS) {
-      const sLeft = Math.ceil((OBSTACLE_DELAY_MS - state.t) / 1000);
-      ctx.fillStyle = "rgba(226,232,240,0.9)";
-      ctx.font = "14px system-ui";
-      ctx.fillText(`Warmup… ${sLeft}s`, 16, 92);
-    }
   }
 
   function draw() {
-    // ensure sane defaults every frame
+    // ensure stable defaults
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
+    ctx.imageSmoothingEnabled = false;
 
     drawBackground();
     drawGround();
@@ -462,11 +445,11 @@
   reset();
 
   let last = performance.now();
-  function loop(now) {
-    const dt = Math.min(32, now - last);
+  function loop(now){
+    const dt = Math.min(32, now-last);
     last = now;
-
     state.t += dt;
+
     step(dt);
     draw();
 
