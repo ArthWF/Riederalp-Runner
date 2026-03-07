@@ -25,6 +25,7 @@
   function applyPixelPerfectResize() {
     DPR = Math.max(1, Math.floor(window.devicePixelRatio || 1));
 
+    // choose integer CSS scale to avoid shimmering/trails
     const pad = 24;
     const maxCssW = Math.max(200, window.innerWidth - pad);
     const maxCssH = Math.max(200, window.innerHeight - pad);
@@ -39,9 +40,11 @@
     canvas.style.width = cssW + "px";
     canvas.style.height = cssH + "px";
 
+    // backing store = logical * DPR
     canvas.width = Math.floor(LOGICAL_W * DPR);
     canvas.height = Math.floor(LOGICAL_H * DPR);
 
+    // draw in logical coordinates
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     ctx.imageSmoothingEnabled = false;
   }
@@ -61,25 +64,24 @@
   const rand = (a, b) => a + Math.random() * (b - a);
 
   // --------------------
-  // SKY: horizontal stripes (30px each)
+  // SKY: horizontal stripes (30px)
   // --------------------
   const SKY_STRIPE_H = 30;
 
-  // pick 2 blues (top darker -> bottom lighter)
-  const SKY_TOP = { r: 10,  g: 35,  b: 110 };
-  const SKY_BOT = { r: 110, g: 190, b: 255 };
+  // Darker top -> lighter bottom
+  const SKY_TOP = { r: 12,  g: 45,  b: 130 };
+  const SKY_BOT = { r: 130, g: 205, b: 255 };
 
-  function lerp(a, b, t) { return a + (b - a) * t; }
-  function rgb({r,g,b}) { return `rgb(${r|0},${g|0},${b|0})`; }
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const rgb = (c) => `rgb(${c.r|0},${c.g|0},${c.b|0})`;
 
   function drawSkyStripesHardClear() {
-    // Hard overwrite entire frame (prevents any trails)
+    // HARD overwrite entire frame (key for no trails)
     ctx.save();
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     ctx.globalCompositeOperation = "copy";
     ctx.globalAlpha = 1;
 
-    // draw stripes top->bottom
     const stripes = Math.ceil(H / SKY_STRIPE_H);
     for (let i = 0; i < stripes; i++) {
       const t = stripes <= 1 ? 1 : i / (stripes - 1);
@@ -106,6 +108,36 @@
   const PANO_BASE_SPEED = 0.018;     // px/ms
   const PANO_SPEED_FACTOR = 0.14;    // linked to runner speed
   const PANO_Y = -30;                // raise pano by 30px
+
+  function drawPanorama() {
+    if (!panoImg.__ok) return false;
+
+    const imgW = panoImg.width || 0;
+    const imgH = panoImg.height || 0;
+    if (imgW <= 0 || imgH <= 0) return false;
+
+    // scale pano to canvas height
+    const scale = H / imgH;
+    const drawW = Math.round(imgW * scale);
+    const drawH = Math.round(H);
+
+    // integer scroll in draw space
+    const scrollPx = Math.floor(state.panoX * scale);
+    let x = -(scrollPx % drawW);
+    if (x > 0) x -= drawW;
+
+    ctx.save();
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1;
+
+    for (; x < W; x += drawW) {
+      ctx.drawImage(panoImg, x, PANO_Y, drawW, drawH);
+    }
+    ctx.restore();
+    return true;
+  }
 
   // --------------------
   // TWO size logics sprites
@@ -144,13 +176,16 @@
       }
     };
 
-    spr.draw = (dx, dy, dw, dh) => {
+    // IMPORTANT: always opaque drawing here unless caller wants alpha
+    spr.draw = (dx, dy, dw, dh, alpha = 1) => {
       if (!spr.ready || spr.frameW <= 0) return false;
       const sx = spr.frame * spr.frameW;
+
       ctx.save();
-      ctx.globalAlpha = 1; // clouds must be opaque too
-      ctx.globalCompositeOperation = "source-over";
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
       ctx.imageSmoothingEnabled = false;
+      ctx.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = alpha; // we will use 1 for clouds (opaque)
       ctx.drawImage(spr.img, sx, 0, spr.frameW, spr.frameH, dx, dy, dw, dh);
       ctx.restore();
       return true;
@@ -177,10 +212,11 @@
   };
 
   const hero = { x: 70, y: 0, w: 42, h: 46, vy: 0, jumpsLeft: 2 };
+
   const obstacles = [];
   let spawnTimer = 0;
 
-  // clouds now have layer: "behind" or "front"
+  // clouds: now opaque + layer behind/front
   const clouds = [];
   let cloudSpawnTimer = 0;
 
@@ -247,11 +283,11 @@
   }
 
   function spawnCloud() {
-    // clouds should be behind pano sometimes
-    const layer = Math.random() < 0.55 ? "behind" : "front";
+    // layer: behind pano (visible in sky holes) OR in front
+    const layer = Math.random() < 0.60 ? "behind" : "front";
 
-    const y = rand(30, 190);
-    const speed = rand(0.10, 0.30); // slightly slower
+    const y = rand(25, 190);
+    const speed = rand(0.10, 0.30);
     const instScale = rand(0.22, 0.42);
 
     let w, h;
@@ -263,7 +299,7 @@
       h = Math.round(cloud.fallbackH * instScale);
     }
 
-    // opaque: no alpha
+    // opaque clouds: no alpha stored
     clouds.push({ x: W + 30, y, w, h, speed, layer });
   }
 
@@ -284,11 +320,9 @@
     state.speed = Math.min(4.8, state.speed + 0.00035);
     state.score += 0.08 * state.speed;
 
-    // panorama scroll
     const panoSpeed = PANO_BASE_SPEED + (state.speed * PANO_SPEED_FACTOR * 0.001);
     state.panoX += dt * panoSpeed;
 
-    // physics
     hero.vy += 0.55;
     hero.y += hero.vy;
 
@@ -327,16 +361,15 @@
       }
     }
 
-    // spawn fewer clouds: increase delay range
+    // clouds: spawn less often (objective)
     cloudSpawnTimer -= dt;
     if (cloudSpawnTimer <= 0) {
       spawnCloud();
-      cloudSpawnTimer = rand(3500, 9000); // ⬅️ fewer clouds
+      cloudSpawnTimer = rand(5000, 12000); // ✅ fewer clouds
     }
 
     // move clouds
     for (const c of clouds) {
-      // clouds move slower than obstacles (parallax)
       c.x -= (c.speed + state.speed * 0.06) * (dt / 16.67);
     }
     while (clouds.length && clouds[0].x + clouds[0].w < -80) clouds.shift();
@@ -345,60 +378,6 @@
   // --------------------
   // Drawing
   // --------------------
-  function tri(x1,y1,x2,y2,x3,y3){
-    ctx.beginPath();
-    ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.lineTo(x3,y3);
-    ctx.closePath(); ctx.fill();
-  }
-
-  function drawPanorama() {
-    if (!panoImg.__ok) return false;
-
-    const imgW = panoImg.width || 0;
-    const imgH = panoImg.height || 0;
-    if (imgW <= 0 || imgH <= 0) return false;
-
-    const scale = H / imgH;
-    const drawW = Math.round(imgW * scale);
-    const drawH = Math.round(H);
-
-    const scrollPx = Math.floor(state.panoX * scale);
-    let x = -(scrollPx % drawW);
-    if (x > 0) x -= drawW;
-
-    ctx.save();
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    ctx.imageSmoothingEnabled = false;
-    ctx.globalCompositeOperation = "source-over";
-    ctx.globalAlpha = 1;
-
-    for (; x < W; x += drawW) {
-      ctx.drawImage(panoImg, x, PANO_Y, drawW, drawH);
-    }
-    ctx.restore();
-    return true;
-  }
-
-  function drawFallbackMountains() {
-    // if pano missing, draw simple dark silhouettes on top of sky
-    const off1 = (state.t * 0.010) % W;
-    ctx.fillStyle = "#18233d";
-    for (let i=0;i<4;i++){
-      const x = -off1 + i*W;
-      tri(x + 10,  groundY-140, x + 180, groundY-340, x + 350, groundY-140);
-      tri(x + 220, groundY-120, x + 390, groundY-320, x + 560, groundY-120);
-    }
-
-    const off2 = (state.t * 0.020) % W;
-    ctx.fillStyle = "#1f2a44";
-    for (let i=0;i<4;i++){
-      const x = -off2 + i*W;
-      tri(x + 40,  groundY-120, x + 130, groundY-240, x + 220, groundY-120);
-      tri(x + 180, groundY-110, x + 270, groundY-220, x + 360, groundY-110);
-      tri(x + 300, groundY-125, x + 390, groundY-250, x + 480, groundY-125);
-    }
-  }
-
   function drawClouds(layer) {
     for (const c of clouds) {
       if (c.layer !== layer) continue;
@@ -406,61 +385,88 @@
       const dx = Math.floor(c.x);
       const dy = Math.floor(c.y);
 
-      if (!cloud.draw(dx, dy, c.w, c.h)) {
-        // opaque fallback
-        ctx.fillStyle = "#e2e8f0";
+      // opaque clouds: alpha = 1
+      if (!cloud.draw(dx, dy, c.w, c.h, 1)) {
+        ctx.save();
+        ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = "source-over";
+        ctx.fillStyle = "#ffffff";
         ctx.fillRect(dx, dy, c.w, c.h);
+        ctx.restore();
       }
     }
   }
 
   function drawBackground() {
-    // 1) hard overwrite sky stripes (prevents any trails)
+    // 1) sky stripes + hard clear (objective)
     drawSkyStripesHardClear();
 
-    // 2) clouds BEHIND pano
+    // 2) clouds behind pano (objective)
     drawClouds("behind");
 
-    // 3) pano (or fallback mountains)
+    // 3) pano on top
     const ok = drawPanorama();
-    if (!ok) drawFallbackMountains();
+    if (!ok) {
+      // if pano missing, at least you still have the sky + clouds
+    }
 
-    // 4) clouds FRONT
+    // 4) clouds in front (objective)
     drawClouds("front");
   }
 
   function drawGround() {
-    // If your pano already includes the ground, comment this out
+    ctx.save();
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
     ctx.fillStyle = "#0f172a";
     ctx.fillRect(0, groundY, W, H - groundY);
     ctx.fillStyle = "#1e293b";
     ctx.fillRect(0, groundY, W, 6);
+    ctx.restore();
   }
 
   function drawObstacles() {
     for (const o of obstacles) {
+      const ox = Math.floor(o.x), oy = Math.floor(o.y);
       if (o.type === "edelweiss") {
-        if (!edel.draw(Math.floor(o.x), Math.floor(o.y), o.w, o.h)) {
+        if (!edel.draw(ox, oy, o.w, o.h, 1)) {
+          ctx.save();
+          ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
           ctx.fillStyle = "#38bdf8";
-          ctx.fillRect(o.x, o.y, o.w, o.h);
+          ctx.fillRect(ox, oy, o.w, o.h);
+          ctx.restore();
         }
       } else {
-        if (!alpen.draw(Math.floor(o.x), Math.floor(o.y), o.w, o.h)) {
+        if (!alpen.draw(ox, oy, o.w, o.h, 1)) {
+          ctx.save();
+          ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
           ctx.fillStyle = "#fb7185";
-          ctx.fillRect(o.x, o.y, o.w, o.h);
+          ctx.fillRect(ox, oy, o.w, o.h);
+          ctx.restore();
         }
       }
     }
   }
 
   function drawRunner() {
-    if (!runner.draw(Math.floor(hero.x), Math.floor(hero.y), hero.w, hero.h)) {
+    const hx = Math.floor(hero.x), hy = Math.floor(hero.y);
+    if (!runner.draw(hx, hy, hero.w, hero.h, 1)) {
+      ctx.save();
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
       ctx.fillStyle = "#fbbf24";
-      ctx.fillRect(hero.x, hero.y, hero.w, hero.h);
+      ctx.fillRect(hx, hy, hero.w, hero.h);
+      ctx.restore();
     }
   }
 
   function drawUI() {
+    ctx.save();
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+
     ctx.fillStyle = "#e2e8f0";
     ctx.font = "16px system-ui";
     ctx.fillText(`Score: ${Math.floor(state.score)}`, 16, 28);
@@ -482,9 +488,12 @@
       ctx.font = "14px system-ui";
       ctx.fillText(`Warmup… ${sLeft}s`, 16, 92);
     }
+
+    ctx.restore();
   }
 
   function draw() {
+    // stable defaults
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
     ctx.imageSmoothingEnabled = false;
