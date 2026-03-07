@@ -37,13 +37,14 @@
   panoImg.src = "assets/RR-Panorama.png";
 
   // pano scrolling speed (px per ms). Tune to taste.
-  // If you want it linked to game speed, we combine both.
-  const PANO_BASE_SPEED = 0.018;     // constant drift
-  const PANO_SPEED_FACTOR = 0.14;    // how much the pano follows runner speed
+  const PANO_BASE_SPEED = 0.018;   // constant drift
+  const PANO_SPEED_FACTOR = 0.14;  // how much pano follows runner speed
 
-  // vertical placement of pano (it is 640px high, same as canvas height)
-  // If your pano is exactly 640px tall and you want it full screen: set 0.
-  const PANO_Y = 0;
+  // ⬅️ pano up by 30px
+  const PANO_Y = -30;
+
+  // base sky color used to clear canvas (prevents trails with transparency)
+  const SKY_COLOR = "#0b1020";
 
   // --------------------
   // TWO size logics:
@@ -80,7 +81,6 @@
     // set src AFTER handlers
     img.src = src;
 
-    // size getter
     spr.size = () => {
       if (spr.ready && spr.frameW > 0 && spr.frameH > 0) {
         return {
@@ -145,7 +145,7 @@
     score: 0,
     best: safeBestRead(),
     over: false,
-    panoX: 0,    // panorama scroll offset in pixels (source space)
+    panoX: 0,    // panorama scroll offset in source pixels
   };
 
   const hero = {
@@ -177,7 +177,6 @@
     clouds.length = 0;
     cloudSpawnTimer = 0;
 
-    // hero adopts runner size (scale if ready else fallback)
     const hs = runner.size();
     hero.w = hs.w;
     hero.h = hs.h;
@@ -198,7 +197,6 @@
     const groundHeroY = groundY - hero.h + RUNNER_GROUND_OFFSET;
     const onGround = hero.y >= groundHeroY - 0.5;
 
-    // double jump: 2nd smaller
     hero.vy = onGround ? -14.0 : -11.5;
     hero.jumpsLeft -= 1;
   }
@@ -259,7 +257,7 @@
   function step(dt) {
     if (state.over) return;
 
-    // if runner loads later, update hero size ONCE when grounded (avoid mid-air pop)
+    // update hero size if runner loads later, only when grounded
     const groundHeroY_old = groundY - hero.h + RUNNER_GROUND_OFFSET;
     const onGroundBefore = hero.y >= groundHeroY_old - 0.5;
 
@@ -276,8 +274,7 @@
     state.speed = Math.min(4.8, state.speed + 0.00035);
     state.score += 0.08 * state.speed;
 
-    // panorama scrolling (independent + linked to speed)
-    // move in "source pixels" per ms
+    // panorama scrolling (source pixels)
     const panoSpeed = PANO_BASE_SPEED + (state.speed * PANO_SPEED_FACTOR * 0.001);
     state.panoX += dt * panoSpeed;
 
@@ -293,7 +290,7 @@
       hero.jumpsLeft = 2;
     }
 
-    // animate sprites (no blocking)
+    // animate sprites
     edel.tick(dt);
     alpen.tick(dt);
     cloud.tick(dt);
@@ -337,34 +334,40 @@
   }
 
   // --------------------
-  // Draw panorama (looping)
+  // Draw panorama (looping) with no trails + integer alignment
   // --------------------
   function drawPanorama() {
+    // Clear base every frame (prevents trails when pano has transparency)
+    ctx.fillStyle = SKY_COLOR;
+    ctx.fillRect(0, 0, W, H);
+
     if (!panoImg.__ok) return false;
 
     const imgW = panoImg.width || 0;
     const imgH = panoImg.height || 0;
     if (imgW <= 0 || imgH <= 0) return false;
 
-    // Scale pano to canvas height (640 -> H). Keeps aspect by scaling width accordingly.
+    // Scale pano to canvas height
     const scale = H / imgH;
-    const drawW = imgW * scale;
-    const drawH = H;
 
-    // Looping offset in draw space
-    let x = -(state.panoX * scale) % drawW;
+    // Force integer draw sizes to avoid subpixel artifacts
+    const drawW = Math.round(imgW * scale);
+    const drawH = Math.round(H);
+
+    // integer scroll in draw-space
+    const scrollPx = Math.floor(state.panoX * scale);
+    let x = -(scrollPx % drawW);
     if (x > 0) x -= drawW;
 
-    // Draw enough copies to cover screen
     for (; x < W; x += drawW) {
-      ctx.drawImage(panoImg, Math.floor(x), PANO_Y, Math.ceil(drawW), Math.ceil(drawH));
+      ctx.drawImage(panoImg, x, PANO_Y, drawW, drawH);
     }
     return true;
   }
 
   // fallback background if pano not loaded
   function drawFallbackMountains() {
-    ctx.fillStyle = "#0b1020";
+    ctx.fillStyle = SKY_COLOR;
     ctx.fillRect(0,0,W,H);
 
     const off1 = (state.t * 0.010) % W;
@@ -399,7 +402,7 @@
   }
 
   function drawGround() {
-    // If your panorama already includes ground, you can comment this out.
+    // If your panorama already includes the ground, you can comment this out.
     ctx.fillStyle = "#0f172a";
     ctx.fillRect(0, groundY, W, H-groundY);
     ctx.fillStyle = "#1e293b";
@@ -435,7 +438,7 @@
     ctx.fillText(`Score: ${Math.floor(state.score)}`, 16, 28);
     ctx.fillText(`Best: ${state.best}`, 16, 50);
 
-    // debug assets load state (useful on GitHub Pages)
+    // debug assets load state
     ctx.font = "12px system-ui";
     ctx.fillText(
       `assets: pano:${panoImg.__ok?"ok":".."} runner:${runner.ready?"ok":".."} edel:${edel.ready?"ok":".."} alpen:${alpen.ready?"ok":".."} cloud:${cloud.ready?"ok":".."}`
