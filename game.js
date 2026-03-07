@@ -15,18 +15,16 @@
   const ctx = canvas.getContext("2d", { alpha: true });
   if (!ctx) return;
 
-  // Logical game resolution (your existing)
+  // Logical game resolution
   const LOGICAL_W = canvas.width || 360;
   const LOGICAL_H = canvas.height || 640;
 
-  // We will render in logical coordinates, but set backing store to DPR
+  // Pixel-perfect + DPR
   let DPR = 1;
 
   function applyPixelPerfectResize() {
     DPR = Math.max(1, Math.floor(window.devicePixelRatio || 1));
 
-    // Choose an integer scale for CSS display (x1, x2, x3...) so no fractional scaling.
-    // Fits within viewport minus padding.
     const pad = 24;
     const maxCssW = Math.max(200, window.innerWidth - pad);
     const maxCssH = Math.max(200, window.innerHeight - pad);
@@ -38,15 +36,12 @@
     const cssW = LOGICAL_W * cssScale;
     const cssH = LOGICAL_H * cssScale;
 
-    // Set CSS size to integer pixels
     canvas.style.width = cssW + "px";
     canvas.style.height = cssH + "px";
 
-    // Set backing store to DPR * logical size (NOT css size)
     canvas.width = Math.floor(LOGICAL_W * DPR);
     canvas.height = Math.floor(LOGICAL_H * DPR);
 
-    // All drawing will be in logical units
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     ctx.imageSmoothingEnabled = false;
   }
@@ -66,6 +61,41 @@
   const rand = (a, b) => a + Math.random() * (b - a);
 
   // --------------------
+  // SKY: horizontal stripes (30px each)
+  // --------------------
+  const SKY_STRIPE_H = 30;
+
+  // pick 2 blues (top darker -> bottom lighter)
+  const SKY_TOP = { r: 10,  g: 35,  b: 110 };
+  const SKY_BOT = { r: 110, g: 190, b: 255 };
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function rgb({r,g,b}) { return `rgb(${r|0},${g|0},${b|0})`; }
+
+  function drawSkyStripesHardClear() {
+    // Hard overwrite entire frame (prevents any trails)
+    ctx.save();
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.globalCompositeOperation = "copy";
+    ctx.globalAlpha = 1;
+
+    // draw stripes top->bottom
+    const stripes = Math.ceil(H / SKY_STRIPE_H);
+    for (let i = 0; i < stripes; i++) {
+      const t = stripes <= 1 ? 1 : i / (stripes - 1);
+      const col = {
+        r: lerp(SKY_TOP.r, SKY_BOT.r, t),
+        g: lerp(SKY_TOP.g, SKY_BOT.g, t),
+        b: lerp(SKY_TOP.b, SKY_BOT.b, t),
+      };
+      ctx.fillStyle = rgb(col);
+      ctx.fillRect(0, i * SKY_STRIPE_H, W, SKY_STRIPE_H);
+    }
+
+    ctx.restore();
+  }
+
+  // --------------------
   // Panorama
   // --------------------
   const panoImg = new Image();
@@ -73,9 +103,6 @@
   panoImg.onerror = () => { panoImg.__ok = false; console.warn("Asset failed: assets/RR-Panorama.png"); };
   panoImg.src = "assets/RR-Panorama.png";
 
-  const SKY_COLOR = "#0b1020";
-
-  // pano speed
   const PANO_BASE_SPEED = 0.018;     // px/ms
   const PANO_SPEED_FACTOR = 0.14;    // linked to runner speed
   const PANO_Y = -30;                // raise pano by 30px
@@ -117,11 +144,11 @@
       }
     };
 
-    spr.draw = (dx, dy, dw, dh, alpha = 1) => {
+    spr.draw = (dx, dy, dw, dh) => {
       if (!spr.ready || spr.frameW <= 0) return false;
       const sx = spr.frame * spr.frameW;
       ctx.save();
-      ctx.globalAlpha = alpha;
+      ctx.globalAlpha = 1; // clouds must be opaque too
       ctx.globalCompositeOperation = "source-over";
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(spr.img, sx, 0, spr.frameW, spr.frameH, dx, dy, dw, dh);
@@ -153,6 +180,7 @@
   const obstacles = [];
   let spawnTimer = 0;
 
+  // clouds now have layer: "behind" or "front"
   const clouds = [];
   let cloudSpawnTimer = 0;
 
@@ -219,11 +247,13 @@
   }
 
   function spawnCloud() {
-    const y = rand(40, 170);
-    const speed = rand(0.15, 0.45);
-    const alpha = rand(0.35, 0.8);
+    // clouds should be behind pano sometimes
+    const layer = Math.random() < 0.55 ? "behind" : "front";
 
+    const y = rand(30, 190);
+    const speed = rand(0.10, 0.30); // slightly slower
     const instScale = rand(0.22, 0.42);
+
     let w, h;
     if (cloud.ready) {
       w = Math.round(cloud.frameW * instScale);
@@ -232,7 +262,9 @@
       w = Math.round(cloud.fallbackW * instScale);
       h = Math.round(cloud.fallbackH * instScale);
     }
-    clouds.push({ x: W + 30, y, w, h, speed, alpha });
+
+    // opaque: no alpha
+    clouds.push({ x: W + 30, y, w, h, speed, layer });
   }
 
   function step(dt) {
@@ -252,10 +284,11 @@
     state.speed = Math.min(4.8, state.speed + 0.00035);
     state.score += 0.08 * state.speed;
 
-    // integer scrolling (prevents subpixel shimmering)
+    // panorama scroll
     const panoSpeed = PANO_BASE_SPEED + (state.speed * PANO_SPEED_FACTOR * 0.001);
     state.panoX += dt * panoSpeed;
 
+    // physics
     hero.vy += 0.55;
     hero.y += hero.vy;
 
@@ -266,11 +299,13 @@
       hero.jumpsLeft = 2;
     }
 
+    // animations
     edel.tick(dt);
     alpen.tick(dt);
     cloud.tick(dt);
     if (hero.y >= groundHeroY - 0.5) runner.tick(dt);
 
+    // obstacles
     if (state.t >= OBSTACLE_DELAY_MS) {
       spawnTimer -= 1;
       if (spawnTimer <= 0) {
@@ -292,17 +327,23 @@
       }
     }
 
+    // spawn fewer clouds: increase delay range
     cloudSpawnTimer -= dt;
     if (cloudSpawnTimer <= 0) {
       spawnCloud();
-      cloudSpawnTimer = rand(1800, 4500);
+      cloudSpawnTimer = rand(3500, 9000); // ⬅️ fewer clouds
     }
-    for (const c of clouds) c.x -= (c.speed + state.speed * 0.10) * (dt / 16.67);
-    while (clouds.length && clouds[0].x + clouds[0].w < -60) clouds.shift();
+
+    // move clouds
+    for (const c of clouds) {
+      // clouds move slower than obstacles (parallax)
+      c.x -= (c.speed + state.speed * 0.06) * (dt / 16.67);
+    }
+    while (clouds.length && clouds[0].x + clouds[0].w < -80) clouds.shift();
   }
 
   // --------------------
-  // Draw pano (no trails) + fallback
+  // Drawing
   // --------------------
   function tri(x1,y1,x2,y2,x3,y3){
     ctx.beginPath();
@@ -311,22 +352,12 @@
   }
 
   function drawPanorama() {
-    // Hard overwrite the whole frame (eliminates any perceived trails)
-    ctx.save();
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    ctx.globalCompositeOperation = "copy";
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = SKY_COLOR;
-    ctx.fillRect(0, 0, W, H);
-    ctx.restore();
-
     if (!panoImg.__ok) return false;
 
     const imgW = panoImg.width || 0;
     const imgH = panoImg.height || 0;
     if (imgW <= 0 || imgH <= 0) return false;
 
-    // pano is 4000x640; canvas logical is 360x640 => scale normally is 1
     const scale = H / imgH;
     const drawW = Math.round(imgW * scale);
     const drawH = Math.round(H);
@@ -345,20 +376,11 @@
       ctx.drawImage(panoImg, x, PANO_Y, drawW, drawH);
     }
     ctx.restore();
-
     return true;
   }
 
   function drawFallbackMountains() {
-    // Full overwrite too
-    ctx.save();
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    ctx.globalCompositeOperation = "copy";
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = SKY_COLOR;
-    ctx.fillRect(0, 0, W, H);
-    ctx.restore();
-
+    // if pano missing, draw simple dark silhouettes on top of sky
     const off1 = (state.t * 0.010) % W;
     ctx.fillStyle = "#18233d";
     for (let i=0;i<4;i++){
@@ -377,21 +399,40 @@
     }
   }
 
-  function drawBackground() {
-    const ok = drawPanorama();
-    if (!ok) drawFallbackMountains();
-
+  function drawClouds(layer) {
     for (const c of clouds) {
-      if (!cloud.draw(Math.floor(c.x), Math.floor(c.y), c.w, c.h, c.alpha)) {
-        ctx.fillStyle = `rgba(226,232,240,${c.alpha})`;
-        ctx.fillRect(c.x, c.y, c.w, c.h);
+      if (c.layer !== layer) continue;
+
+      const dx = Math.floor(c.x);
+      const dy = Math.floor(c.y);
+
+      if (!cloud.draw(dx, dy, c.w, c.h)) {
+        // opaque fallback
+        ctx.fillStyle = "#e2e8f0";
+        ctx.fillRect(dx, dy, c.w, c.h);
       }
     }
   }
 
+  function drawBackground() {
+    // 1) hard overwrite sky stripes (prevents any trails)
+    drawSkyStripesHardClear();
+
+    // 2) clouds BEHIND pano
+    drawClouds("behind");
+
+    // 3) pano (or fallback mountains)
+    const ok = drawPanorama();
+    if (!ok) drawFallbackMountains();
+
+    // 4) clouds FRONT
+    drawClouds("front");
+  }
+
   function drawGround() {
+    // If your pano already includes the ground, comment this out
     ctx.fillStyle = "#0f172a";
-    ctx.fillRect(0, groundY, W, H-groundY);
+    ctx.fillRect(0, groundY, W, H - groundY);
     ctx.fillStyle = "#1e293b";
     ctx.fillRect(0, groundY, W, 6);
   }
@@ -399,12 +440,12 @@
   function drawObstacles() {
     for (const o of obstacles) {
       if (o.type === "edelweiss") {
-        if (!edel.draw(o.x, o.y, o.w, o.h)) {
+        if (!edel.draw(Math.floor(o.x), Math.floor(o.y), o.w, o.h)) {
           ctx.fillStyle = "#38bdf8";
           ctx.fillRect(o.x, o.y, o.w, o.h);
         }
       } else {
-        if (!alpen.draw(o.x, o.y, o.w, o.h)) {
+        if (!alpen.draw(Math.floor(o.x), Math.floor(o.y), o.w, o.h)) {
           ctx.fillStyle = "#fb7185";
           ctx.fillRect(o.x, o.y, o.w, o.h);
         }
@@ -413,7 +454,7 @@
   }
 
   function drawRunner() {
-    if (!runner.draw(hero.x, hero.y, hero.w, hero.h)) {
+    if (!runner.draw(Math.floor(hero.x), Math.floor(hero.y), hero.w, hero.h)) {
       ctx.fillStyle = "#fbbf24";
       ctx.fillRect(hero.x, hero.y, hero.w, hero.h);
     }
@@ -424,10 +465,26 @@
     ctx.font = "16px system-ui";
     ctx.fillText(`Score: ${Math.floor(state.score)}`, 16, 28);
     ctx.fillText(`Best: ${state.best}`, 16, 50);
+
+    if (state.over) {
+      ctx.fillStyle = "rgba(2,6,23,0.65)";
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "#fff";
+      ctx.font = "22px system-ui";
+      ctx.fillText("Game Over", 110, 300);
+      ctx.font = "16px system-ui";
+      ctx.fillText("Tap to restart", 112, 330);
+    }
+
+    if (!state.over && state.t < OBSTACLE_DELAY_MS) {
+      const sLeft = Math.ceil((OBSTACLE_DELAY_MS - state.t) / 1000);
+      ctx.fillStyle = "rgba(226,232,240,0.95)";
+      ctx.font = "14px system-ui";
+      ctx.fillText(`Warmup… ${sLeft}s`, 16, 92);
+    }
   }
 
   function draw() {
-    // ensure stable defaults
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
     ctx.imageSmoothingEnabled = false;
@@ -446,10 +503,10 @@
 
   let last = performance.now();
   function loop(now){
-    const dt = Math.min(32, now-last);
+    const dt = Math.min(32, now - last);
     last = now;
-    state.t += dt;
 
+    state.t += dt;
     step(dt);
     draw();
 
