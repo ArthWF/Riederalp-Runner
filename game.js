@@ -41,7 +41,6 @@
     canvas.width = Math.floor(LOGICAL_W * DPR);
     canvas.height = Math.floor(LOGICAL_H * DPR);
 
-    // draw in logical coordinates
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     ctx.imageSmoothingEnabled = false;
   }
@@ -57,6 +56,7 @@
 
   const EDEL_GROUND_OFFSET = 10;
   const ALPEN_GROUND_OFFSET = 6;
+  const COW_GROUND_OFFSET = 0; // ajuste si la vache “flotte” ou s’enfonce
 
   const rand = (a, b) => a + Math.random() * (b - a);
 
@@ -64,13 +64,12 @@
   // Sky stripes (30px each, dark -> light)
   // --------------------
   const SKY_STRIPE_H = 30;
-  const SKY_TOP = { r: 12,  g: 55,  b: 150 };   // darker
-  const SKY_BOT = { r: 150, g: 220, b: 255 };   // lighter
+  const SKY_TOP = { r: 12,  g: 55,  b: 150 };
+  const SKY_BOT = { r: 150, g: 220, b: 255 };
   const lerp = (a, b, t) => a + (b - a) * t;
   const rgb = (c) => `rgb(${c.r|0},${c.g|0},${c.b|0})`;
 
   function drawSkyStripesHardClear() {
-    // HARD overwrite the whole frame (prevents trails)
     ctx.save();
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     ctx.globalCompositeOperation = "copy";
@@ -101,7 +100,7 @@
 
   const PANO_BASE_SPEED = 0.018;     // px/ms
   const PANO_SPEED_FACTOR = 0.14;    // linked to runner speed
-  const PANO_Y = -30;                // raise pano by 30px
+  const PANO_Y = -30;
 
   // --------------------
   // Two-size-logic sprites
@@ -163,6 +162,9 @@
   const alpen  = makeSprite({ src:"assets/alpenrose.png", frames:4, fps:3, scale:0.20, fallbackW:47, fallbackH:40 });
   const cloud  = makeSprite({ src:"assets/cloud.png", frames:4, fps:4, scale:0.35, fallbackW:90, fallbackH:48 });
 
+  // ✅ NEW obstacle: cow.png (assumed 4 frames)
+  const cow    = makeSprite({ src:"assets/cow.png", frames:4, fps:4, scale:0.22, fallbackW:48, fallbackH:40 });
+
   // --------------------
   // Game state
   // --------------------
@@ -172,7 +174,7 @@
     score: 0,
     best: safeBestRead(),
     over: false,
-    panoX: 0, // pano scroll in source px
+    panoX: 0,
   };
 
   const hero = { x: 70, y: 0, w: 42, h: 46, vy: 0, jumpsLeft: 2 };
@@ -184,16 +186,12 @@
   const clouds = [];
   let cloudSpawnTimer = 0;
 
-  // Smaller clouds scale range (request #1)
   const CLOUD_INST_SCALE_MIN = 0.16;
   const CLOUD_INST_SCALE_MAX = 0.30;
 
-  // Clouds move left independently from pano (request #2)
-  // speed in px per ms in logical space
   const CLOUD_LEFT_SPEED_MIN = 0.020;
   const CLOUD_LEFT_SPEED_MAX = 0.055;
 
-  // spawn less often (optional but sane)
   const CLOUD_SPAWN_MIN_MS = 5000;
   const CLOUD_SPAWN_MAX_MS = 12000;
 
@@ -221,6 +219,7 @@
     edel.frame = edel.timer = 0;
     alpen.frame = alpen.timer = 0;
     cloud.frame = cloud.timer = 0;
+    cow.frame = cow.timer = 0;
   }
 
   function jump() {
@@ -230,7 +229,7 @@
     const groundHeroY = groundY - hero.h + RUNNER_GROUND_OFFSET;
     const onGround = hero.y >= groundHeroY - 0.5;
 
-    hero.vy = onGround ? -14.0 : -11.5; // 2nd jump smaller
+    hero.vy = onGround ? -14.0 : -11.5;
     hero.jumpsLeft -= 1;
   }
 
@@ -251,12 +250,22 @@
   }
 
   function spawnObstacle() {
-    const type = Math.random() < 0.5 ? "edelweiss" : "alpenrose";
-    const s = (type === "edelweiss") ? edel.size() : alpen.size();
-    const w = s.w, h = s.h;
+    // weights: edel 40%, alpen 40%, cow 20%
+    const r = Math.random();
+    const type = (r < 0.40) ? "edelweiss" : (r < 0.80 ? "alpenrose" : "cow");
 
-    let y = groundY - h;
-    y += (type === "edelweiss") ? EDEL_GROUND_OFFSET : ALPEN_GROUND_OFFSET;
+    let w, h, y;
+
+    if (type === "edelweiss") {
+      ({ w, h } = edel.size());
+      y = groundY - h + EDEL_GROUND_OFFSET;
+    } else if (type === "alpenrose") {
+      ({ w, h } = alpen.size());
+      y = groundY - h + ALPEN_GROUND_OFFSET;
+    } else {
+      ({ w, h } = cow.size());
+      y = groundY - h + COW_GROUND_OFFSET;
+    }
 
     obstacles.push({ type, x: W + 40, y, w, h });
   }
@@ -264,7 +273,7 @@
   function spawnCloud() {
     const y = rand(20, 200);
     const instScale = rand(CLOUD_INST_SCALE_MIN, CLOUD_INST_SCALE_MAX);
-    const vx = rand(CLOUD_LEFT_SPEED_MIN, CLOUD_LEFT_SPEED_MAX); // px/ms, moves left
+    const vx = rand(CLOUD_LEFT_SPEED_MIN, CLOUD_LEFT_SPEED_MAX);
 
     let w, h;
     if (cloud.ready) {
@@ -315,6 +324,7 @@
     // animations
     edel.tick(dt);
     alpen.tick(dt);
+    cow.tick(dt);
     cloud.tick(dt);
     if (hero.y >= groundHeroY - 0.5) runner.tick(dt);
 
@@ -342,7 +352,7 @@
       }
     }
 
-    // clouds: spawn less often
+    // clouds spawn less often
     cloudSpawnTimer -= dt;
     if (cloudSpawnTimer <= 0) {
       spawnCloud();
@@ -351,7 +361,6 @@
 
     // clouds move left independent of pano
     for (const c of clouds) c.x -= dt * c.vx;
-
     while (clouds.length && clouds[0].x + clouds[0].w < -80) clouds.shift();
   }
 
@@ -391,7 +400,6 @@
       const dx = Math.floor(c.x);
       const dy = Math.floor(c.y);
 
-      // opaque clouds (alpha=1)
       if (!cloud.draw(dx, dy, c.w, c.h, 1)) {
         ctx.save();
         ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -411,7 +419,7 @@
     // 2) panorama on top (transparent pixels show sky)
     drawPanorama();
 
-    // 3) clouds (in front, moving left independently)
+    // 3) clouds in front moving left
     drawClouds();
   }
 
@@ -430,6 +438,7 @@
   function drawObstacles() {
     for (const o of obstacles) {
       const ox = Math.floor(o.x), oy = Math.floor(o.y);
+
       if (o.type === "edelweiss") {
         if (!edel.draw(ox, oy, o.w, o.h, 1)) {
           ctx.save();
@@ -438,11 +447,20 @@
           ctx.fillRect(ox, oy, o.w, o.h);
           ctx.restore();
         }
-      } else {
+      } else if (o.type === "alpenrose") {
         if (!alpen.draw(ox, oy, o.w, o.h, 1)) {
           ctx.save();
           ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
           ctx.fillStyle = "#fb7185";
+          ctx.fillRect(ox, oy, o.w, o.h);
+          ctx.restore();
+        }
+      } else {
+        // cow
+        if (!cow.draw(ox, oy, o.w, o.h, 1)) {
+          ctx.save();
+          ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+          ctx.fillStyle = "#ffffff";
           ctx.fillRect(ox, oy, o.w, o.h);
           ctx.restore();
         }
