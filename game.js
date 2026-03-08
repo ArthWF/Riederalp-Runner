@@ -84,11 +84,10 @@
   const lerp = (a, b, t) => a + (b - a) * t;
   const rgb = (c) => `rgb(${c.r|0},${c.g|0},${c.b|0})`;
 
-  // ✅ FIX #1: no "copy" here — keep sky opaque and visible
-  function drawSkyStripesHardClear() {
+  // Sky is drawn opaque in source-over so it remains visible behind transparent panorama
+  function drawSkyStripes() {
     ctx.save();
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-
     ctx.globalCompositeOperation = "source-over";
     ctx.globalAlpha = 1;
 
@@ -193,7 +192,7 @@
   // Modes & state
   // --------------------
   const state = {
-    mode: "loading",
+    mode: "loading", // loading | menu | playing | gameover
     loadProgress: 0,
     loadError: "",
 
@@ -205,7 +204,7 @@
     panoX: 0,
     deathBy: null,
 
-    volume: safeVolRead(),
+    volume: safeVolRead(), // 0..1
     draggingVol: false,
   };
 
@@ -223,20 +222,38 @@
   const obstacles = [];
   let spawnTimer = 0;
 
-  const clouds = [];
-  let cloudSpawnTimer = 0;
+  // --------------------
+  // CLOUD LAYERS
+  // --------------------
+  const cloudsBack = [];   // between sky and panorama
+  const cloudsFront = [];  // above panorama
+  let cloudBackTimer = 0;
+  let cloudFrontTimer = 0;
 
-  const CLOUD_INST_SCALE_MIN = 0.16;
-  const CLOUD_INST_SCALE_MAX = 0.30;
-  const CLOUD_LEFT_SPEED_MIN = 0.020;
-  const CLOUD_LEFT_SPEED_MAX = 0.055;
-  const CLOUD_SPAWN_MIN_MS = 5000;
-  const CLOUD_SPAWN_MAX_MS = 12000;
+  // FRONT clouds (smaller, rarer)
+  const CLOUD_FRONT_SCALE_MIN = 0.16;
+  const CLOUD_FRONT_SCALE_MAX = 0.30;
+  const CLOUD_FRONT_SPEED_MIN = 0.020;
+  const CLOUD_FRONT_SPEED_MAX = 0.055;
+  const CLOUD_FRONT_SPAWN_MIN_MS = 5000;
+  const CLOUD_FRONT_SPAWN_MAX_MS = 12000;
 
+  // BACK clouds (bigger, more frequent, slightly slower)
+  const CLOUD_BACK_SCALE_MIN = 0.24;
+  const CLOUD_BACK_SCALE_MAX = 0.50;
+  const CLOUD_BACK_SPEED_MIN = 0.012;
+  const CLOUD_BACK_SPEED_MAX = 0.035;
+  const CLOUD_BACK_SPAWN_MIN_MS = 2500;
+  const CLOUD_BACK_SPAWN_MAX_MS = 6500;
+
+  // Panorama speed
   const PANO_BASE_SPEED = 0.018;
   const PANO_SPEED_FACTOR = 0.14;
   const PANO_Y = -30;
 
+  // --------------------
+  // Volume UI geometry (menu)
+  // --------------------
   function volumeSliderRect() {
     const w = 240;
     const h = 14;
@@ -274,6 +291,9 @@
     return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
   }
 
+  // --------------------
+  // Controls
+  // --------------------
   function jump() {
     if (state.mode !== "playing") return;
     if (hero.jumpsLeft <= 0) return;
@@ -334,9 +354,7 @@
       return;
     }
 
-    if (state.mode === "playing") {
-      jump();
-    }
+    if (state.mode === "playing") jump();
   }, { passive:false });
 
   canvas.addEventListener("pointermove", (e) => {
@@ -351,6 +369,9 @@
     state.draggingVol = false;
   });
 
+  // --------------------
+  // Reset run
+  // --------------------
   function resetRun() {
     state.t = 0;
     state.speed = 2.0;
@@ -359,10 +380,12 @@
     state.deathBy = null;
 
     obstacles.length = 0;
-    clouds.length = 0;
+    cloudsBack.length = 0;
+    cloudsFront.length = 0;
 
     spawnTimer = 0;
-    cloudSpawnTimer = 0;
+    cloudBackTimer = 0;
+    cloudFrontTimer = 0;
 
     const hs = runnerSpr ? runnerSpr.size() : { w: 42, h: 46 };
     hero.w = hs.w;
@@ -371,13 +394,16 @@
     hero.jumpsLeft = 2;
     hero.y = groundY - hero.h + RUNNER_GROUND_OFFSET;
 
-    if (runnerSpr) runnerSpr.frame = runnerSpr.timer = 0;
-    if (edelSpr) edelSpr.frame = edelSpr.timer = 0;
-    if (alpenSpr) alpenSpr.frame = alpenSpr.timer = 0;
-    if (cloudSpr) cloudSpr.frame = cloudSpr.timer = 0;
-    if (cowSpr) cowSpr.frame = cowSpr.timer = 0;
+    runnerSpr.frame = runnerSpr.timer = 0;
+    edelSpr.frame = edelSpr.timer = 0;
+    alpenSpr.frame = alpenSpr.timer = 0;
+    cloudSpr.frame = cloudSpr.timer = 0;
+    cowSpr.frame = cowSpr.timer = 0;
   }
 
+  // --------------------
+  // Collision helpers
+  // --------------------
   function heroHitbox() {
     const padX = Math.floor(hero.w * 0.22);
     const padY = Math.floor(hero.h * 0.12);
@@ -388,6 +414,9 @@
     return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
   }
 
+  // --------------------
+  // Spawning
+  // --------------------
   function spawnObstacle() {
     const r = Math.random();
     const type = (r < 0.40) ? "edelweiss" : (r < 0.80 ? "alpenrose" : "cow");
@@ -408,17 +437,31 @@
     obstacles.push({ type, x: W + 40, y, w, h });
   }
 
-  function spawnCloud() {
-    const y = rand(20, 200);
-    const instScale = rand(CLOUD_INST_SCALE_MIN, CLOUD_INST_SCALE_MAX);
-    const vx = rand(CLOUD_LEFT_SPEED_MIN, CLOUD_LEFT_SPEED_MAX);
+  function spawnCloudBack() {
+    const y = rand(20, 190);
+    const instScale = rand(CLOUD_BACK_SCALE_MIN, CLOUD_BACK_SCALE_MAX);
+    const vx = rand(CLOUD_BACK_SPEED_MIN, CLOUD_BACK_SPEED_MAX);
 
     const w = Math.round((cloudSpr.frameW || cloudSpr.fallbackW) * instScale);
     const h = Math.round((cloudSpr.frameH || cloudSpr.fallbackH) * instScale);
 
-    clouds.push({ x: W + 40, y, w, h, vx });
+    cloudsBack.push({ x: W + 40, y, w, h, vx });
   }
 
+  function spawnCloudFront() {
+    const y = rand(30, 210);
+    const instScale = rand(CLOUD_FRONT_SCALE_MIN, CLOUD_FRONT_SCALE_MAX);
+    const vx = rand(CLOUD_FRONT_SPEED_MIN, CLOUD_FRONT_SPEED_MAX);
+
+    const w = Math.round((cloudSpr.frameW || cloudSpr.fallbackW) * instScale);
+    const h = Math.round((cloudSpr.frameH || cloudSpr.fallbackH) * instScale);
+
+    cloudsFront.push({ x: W + 40, y, w, h, vx });
+  }
+
+  // --------------------
+  // Step
+  // --------------------
   function step(dt) {
     if (state.mode !== "playing") return;
 
@@ -428,6 +471,7 @@
     const panoSpeed = PANO_BASE_SPEED + (state.speed * PANO_SPEED_FACTOR * 0.001);
     state.panoX += dt * panoSpeed;
 
+    // physics
     hero.vy += 0.55;
     hero.y += hero.vy;
 
@@ -438,12 +482,14 @@
       hero.jumpsLeft = 2;
     }
 
+    // animate sprites
     edelSpr.tick(dt);
     alpenSpr.tick(dt);
     cowSpr.tick(dt);
     cloudSpr.tick(dt);
     if (hero.y >= groundHeroY - 0.5) runnerSpr.tick(dt);
 
+    // spawn obstacles
     if (state.t >= OBSTACLE_DELAY_MS) {
       spawnTimer -= 1;
       if (spawnTimer <= 0) {
@@ -452,9 +498,11 @@
       }
     }
 
+    // move obstacles
     for (const o of obstacles) o.x -= state.speed;
     while (obstacles.length && obstacles[0].x + obstacles[0].w < -40) obstacles.shift();
 
+    // collisions
     const hb = heroHitbox();
     for (const o of obstacles) {
       if (rectHit(hb, o)) {
@@ -469,16 +517,28 @@
       }
     }
 
-    cloudSpawnTimer -= dt;
-    if (cloudSpawnTimer <= 0) {
-      spawnCloud();
-      cloudSpawnTimer = rand(CLOUD_SPAWN_MIN_MS, CLOUD_SPAWN_MAX_MS);
+    // spawn/move BACK clouds (more often)
+    cloudBackTimer -= dt;
+    if (cloudBackTimer <= 0) {
+      spawnCloudBack();
+      cloudBackTimer = rand(CLOUD_BACK_SPAWN_MIN_MS, CLOUD_BACK_SPAWN_MAX_MS);
     }
+    for (const c of cloudsBack) c.x -= dt * c.vx;
+    while (cloudsBack.length && cloudsBack[0].x + cloudsBack[0].w < -120) cloudsBack.shift();
 
-    for (const c of clouds) c.x -= dt * c.vx;
-    while (clouds.length && clouds[0].x + clouds[0].w < -80) clouds.shift();
+    // spawn/move FRONT clouds (less often)
+    cloudFrontTimer -= dt;
+    if (cloudFrontTimer <= 0) {
+      spawnCloudFront();
+      cloudFrontTimer = rand(CLOUD_FRONT_SPAWN_MIN_MS, CLOUD_FRONT_SPAWN_MAX_MS);
+    }
+    for (const c of cloudsFront) c.x -= dt * c.vx;
+    while (cloudsFront.length && cloudsFront[0].x + cloudsFront[0].w < -120) cloudsFront.shift();
   }
 
+  // --------------------
+  // Drawing
+  // --------------------
   function drawPanorama() {
     const img = assets.pano;
     if (!img) return false;
@@ -505,8 +565,8 @@
     return true;
   }
 
-  function drawClouds() {
-    for (const c of clouds) {
+  function drawCloudArray(arr) {
+    for (const c of arr) {
       const dx = Math.floor(c.x);
       const dy = Math.floor(c.y);
       cloudSpr.draw(dx, dy, c.w, c.h, 1);
@@ -600,8 +660,11 @@
     ctx.restore();
   }
 
+  // --------------------
+  // UI screens
+  // --------------------
   function drawLoading() {
-    drawSkyStripesHardClear();
+    drawSkyStripes();
     ctx.save();
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     ctx.fillStyle = "rgba(2,6,23,0.55)";
@@ -622,9 +685,10 @@
   }
 
   function drawMenu() {
-    drawSkyStripesHardClear();
+    drawSkyStripes();
+    drawCloudArray(cloudsBack); // ✅ behind mountains
     drawPanorama();
-    drawClouds();
+    drawCloudArray(cloudsFront); // ✅ in front
     drawGround();
 
     ctx.save();
@@ -646,9 +710,10 @@
   }
 
   function drawPlaying() {
-    drawSkyStripesHardClear();
+    drawSkyStripes();
+    drawCloudArray(cloudsBack);   // ✅ behind mountains
     drawPanorama();
-    drawClouds();
+    drawCloudArray(cloudsFront);  // ✅ front
     drawGround();
     drawObstacles();
     drawRunner();
@@ -669,9 +734,10 @@
   }
 
   function drawGameOver() {
-    drawSkyStripesHardClear();
+    drawSkyStripes();
+    drawCloudArray(cloudsBack);
     drawPanorama();
-    drawClouds();
+    drawCloudArray(cloudsFront);
     drawGround();
     drawObstacles();
     drawRunner();
@@ -705,6 +771,9 @@
     if (state.mode === "gameover") return drawGameOver();
   }
 
+  // --------------------
+  // Asset loading sequence
+  // --------------------
   async function loadAllAssets() {
     state.mode = "loading";
     state.loadProgress = 0;
@@ -732,6 +801,7 @@
         assets.music.muted = (state.volume <= 0.0001);
       }
 
+      // Start in menu
       goToMenu();
     } catch (err) {
       state.loadError = String(err?.message || err);
@@ -739,6 +809,9 @@
     }
   }
 
+  // --------------------
+  // Main loop
+  // --------------------
   let last = performance.now();
   function loop(now) {
     const dt = Math.min(32, now - last);
@@ -747,7 +820,6 @@
     state.t += dt;
     step(dt);
     draw();
-
     requestAnimationFrame(loop);
   }
 
