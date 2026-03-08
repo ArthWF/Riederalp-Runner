@@ -438,7 +438,7 @@
   }
 
   function spawnCloudBack() {
-    const y = rand(20, 190);
+    const y = rand(6, 110);
     const instScale = rand(CLOUD_BACK_SCALE_MIN, CLOUD_BACK_SCALE_MAX);
     const vx = rand(CLOUD_BACK_SPEED_MIN, CLOUD_BACK_SPEED_MAX);
 
